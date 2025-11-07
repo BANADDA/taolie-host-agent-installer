@@ -348,4 +348,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ---
 
-**Made with ❤️ for the Taolie community**
+**Made with ❤️ for the Taolie.ai community**
