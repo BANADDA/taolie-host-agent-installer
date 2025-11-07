@@ -85,13 +85,13 @@ Options:
 
 Examples:
   # Basic installation with API key
-  curl -fsSL https://[...]/install.sh | bash -s -- --api-key abc123
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123
 
   # Custom ports and IP
-  curl -fsSL https://[...]/install.sh | bash -s -- --api-key abc123 --public-ip 1.2.3.4 --ssh-port 2223
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --public-ip 1.2.3.4 --ssh-port 2223
 
   # CPU-only mode
-  curl -fsSL https://[...]/install.sh | bash -s -- --api-key abc123 --cpu-only
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --cpu-only
 
 EOF
     exit 0
@@ -162,7 +162,7 @@ if [ -z "$API_KEY" ]; then
     echo ""
     echo "Get your API key from: https://taolie-ai.vercel.app/my-gpu"
     echo ""
-    echo "Usage: curl -fsSL [...]/install.sh | bash -s -- --api-key YOUR_API_KEY"
+    echo "Usage: curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY"
     exit 1
 fi
 
@@ -221,13 +221,28 @@ if [ "$CPU_ONLY" = false ]; then
             
             # Check NVIDIA Container Toolkit
             print_info "Checking NVIDIA Container Toolkit..."
-            # Try --runtime=nvidia first, then --gpus all as fallback
-            if docker run --rm --runtime=nvidia nvidia/cuda:11.0-base nvidia-smi &> /dev/null 2>&1; then
-                print_success "NVIDIA Container Toolkit is properly configured (--runtime=nvidia)"
-            elif docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi &> /dev/null 2>&1; then
+            
+            # Pre-pull the test image to avoid timeout issues
+            print_info "Pulling test image (this may take a moment on first run)..."
+            # Use valid CUDA base image tags
+            docker pull nvidia/cuda:12.6.0-base-ubuntu22.04 &> /dev/null || docker pull nvidia/cuda:11.8.0-base-ubuntu22.04 &> /dev/null
+            
+            # Determine which CUDA image is available
+            if docker images nvidia/cuda:12.6.0-base-ubuntu22.04 --format "{{.Repository}}" | grep -q cuda; then
+                TEST_IMAGE="nvidia/cuda:12.6.0-base-ubuntu22.04"
+            else
+                TEST_IMAGE="nvidia/cuda:11.8.0-base-ubuntu22.04"
+            fi
+            
+            # Try --gpus all first (recommended method)
+            print_info "Testing GPU access with --gpus all..."
+            if timeout 10 docker run --rm --gpus all $TEST_IMAGE nvidia-smi &> /dev/null; then
                 print_success "NVIDIA Container Toolkit is properly configured (--gpus all)"
-                # Update deployment to use --gpus instead of --runtime
                 USE_GPUS_FLAG=true
+            # Then try --runtime=nvidia as fallback
+            elif timeout 10 docker run --rm --runtime=nvidia $TEST_IMAGE nvidia-smi &> /dev/null; then
+                print_success "NVIDIA Container Toolkit is properly configured (--runtime=nvidia)"
+                USE_GPUS_FLAG=false
             else
                 print_warning "NVIDIA Container Toolkit test failed, attempting to fix..."
                 
@@ -245,18 +260,19 @@ if [ "$CPU_ONLY" = false ]; then
                     
                     # Test again
                     print_info "Testing NVIDIA Container Toolkit again..."
-                    if docker run --rm --runtime=nvidia nvidia/cuda:11.0-base nvidia-smi &> /dev/null 2>&1; then
-                        print_success "NVIDIA Container Toolkit is now working! (--runtime=nvidia)"
-                    elif docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi &> /dev/null 2>&1; then
+                    if timeout 10 docker run --rm --gpus all $TEST_IMAGE nvidia-smi &> /dev/null; then
                         print_success "NVIDIA Container Toolkit is now working! (--gpus all)"
                         USE_GPUS_FLAG=true
+                    elif timeout 10 docker run --rm --runtime=nvidia $TEST_IMAGE nvidia-smi &> /dev/null; then
+                        print_success "NVIDIA Container Toolkit is now working! (--runtime=nvidia)"
+                        USE_GPUS_FLAG=false
                     else
                         print_error "NVIDIA Container Toolkit is still not working after configuration"
                         echo ""
                         echo "Please try manually:"
                         echo "  sudo nvidia-ctk runtime configure --runtime=docker"
                         echo "  sudo systemctl restart docker"
-                        echo "  docker run --rm --runtime=nvidia nvidia/cuda:11.0-base nvidia-smi"
+                        echo "  docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu22.04 nvidia-smi"
                         echo ""
                         read -p "Continue with CPU-only mode instead? (y/n) " -n 1 -r
                         echo
@@ -566,7 +582,7 @@ ${YELLOW}⚠ Important Reminders:${NC}
 
 ${BLUE}Need Help?${NC}
   Documentation: https://taolie-ai.vercel.app/my-gpu
-  Support: https://help.manus.im
+  Support: https://help.taolie.ai
 
 EOF
 
