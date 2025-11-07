@@ -39,6 +39,7 @@ RENTAL_PORT_2=9999
 RENTAL_PORT_3=7777
 DB_PASSWORD="db_pass"
 CPU_ONLY=false
+USE_GPUS_FLAG=false
 INSTALL_DIR="$HOME/taolie-host-agent"
 
 # Helper functions
@@ -220,18 +221,71 @@ if [ "$CPU_ONLY" = false ]; then
             
             # Check NVIDIA Container Toolkit
             print_info "Checking NVIDIA Container Toolkit..."
-            if docker run --rm --runtime=nvidia nvidia/cuda:11.0-base nvidia-smi &> /dev/null; then
-                print_success "NVIDIA Container Toolkit is properly configured"
+            # Try --runtime=nvidia first, then --gpus all as fallback
+            if docker run --rm --runtime=nvidia nvidia/cuda:11.0-base nvidia-smi &> /dev/null 2>&1; then
+                print_success "NVIDIA Container Toolkit is properly configured (--runtime=nvidia)"
+            elif docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi &> /dev/null 2>&1; then
+                print_success "NVIDIA Container Toolkit is properly configured (--gpus all)"
+                # Update deployment to use --gpus instead of --runtime
+                USE_GPUS_FLAG=true
             else
-                print_error "NVIDIA Container Toolkit is not properly configured!"
-                echo ""
-                echo "Please install NVIDIA Container Toolkit:"
-                echo "  distribution=\$(. /etc/os-release;echo \$ID\$VERSION_ID)"
-                echo "  curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -"
-                echo "  curl -s -L https://nvidia.github.io/nvidia-docker/\$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list"
-                echo "  sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit"
-                echo "  sudo systemctl restart docker"
-                exit 1
+                print_warning "NVIDIA Container Toolkit test failed, attempting to fix..."
+                
+                # Check if toolkit is installed
+                if command -v nvidia-ctk &> /dev/null || dpkg -l | grep -q nvidia-container-toolkit; then
+                    print_info "NVIDIA Container Toolkit is installed, configuring Docker..."
+                    
+                    # Configure Docker to use NVIDIA runtime
+                    sudo nvidia-ctk runtime configure --runtime=docker &> /dev/null || true
+                    
+                    # Restart Docker daemon
+                    print_info "Restarting Docker daemon..."
+                    sudo systemctl restart docker
+                    sleep 3
+                    
+                    # Test again
+                    print_info "Testing NVIDIA Container Toolkit again..."
+                    if docker run --rm --runtime=nvidia nvidia/cuda:11.0-base nvidia-smi &> /dev/null 2>&1; then
+                        print_success "NVIDIA Container Toolkit is now working! (--runtime=nvidia)"
+                    elif docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi &> /dev/null 2>&1; then
+                        print_success "NVIDIA Container Toolkit is now working! (--gpus all)"
+                        USE_GPUS_FLAG=true
+                    else
+                        print_error "NVIDIA Container Toolkit is still not working after configuration"
+                        echo ""
+                        echo "Please try manually:"
+                        echo "  sudo nvidia-ctk runtime configure --runtime=docker"
+                        echo "  sudo systemctl restart docker"
+                        echo "  docker run --rm --runtime=nvidia nvidia/cuda:11.0-base nvidia-smi"
+                        echo ""
+                        read -p "Continue with CPU-only mode instead? (y/n) " -n 1 -r
+                        echo
+                        if [[ $REPLY =~ ^[Yy]$ ]]; then
+                            print_warning "Switching to CPU-only mode"
+                            CPU_ONLY=true
+                        else
+                            exit 1
+                        fi
+                    fi
+                else
+                    print_error "NVIDIA Container Toolkit is not installed!"
+                    echo ""
+                    echo "Please install NVIDIA Container Toolkit:"
+                    echo "  distribution=\$(. /etc/os-release;echo \$ID\$VERSION_ID)"
+                    echo "  curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -"
+                    echo "  curl -s -L https://nvidia.github.io/nvidia-docker/\$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list"
+                    echo "  sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit"
+                    echo "  sudo systemctl restart docker"
+                    echo ""
+                    read -p "Continue with CPU-only mode instead? (y/n) " -n 1 -r
+                    echo
+                    if [[ $REPLY =~ ^[Yy]$ ]]; then
+                        print_warning "Switching to CPU-only mode"
+                        CPU_ONLY=true
+                    else
+                        exit 1
+                    fi
+                fi
             fi
         else
             print_warning "No NVIDIA GPU detected. Switching to CPU-only mode."
@@ -411,18 +465,34 @@ if [ "$CPU_ONLY" = true ]; then
         ghcr.io/banadda/host-agent:latest
 else
     print_info "Deploying with GPU support..."
-    docker run -d \
-        --name taolie-host-agent \
-        --restart unless-stopped \
-        --runtime nvidia \
-        --privileged \
-        --network taolie-network \
-        -e NVIDIA_VISIBLE_DEVICES=all \
-        -e NVIDIA_DRIVER_CAPABILITIES=all \
-        -v /var/run/docker.sock:/var/run/docker.sock \
-        -v "$(pwd)/config.yaml:/etc/taolie-host-agent/config.yaml:ro" \
-        -v taolie_agent_logs:/var/log/taolie-host-agent \
-        ghcr.io/banadda/host-agent:latest
+    # Use --gpus flag if USE_GPUS_FLAG is set, otherwise use --runtime nvidia
+    if [ "${USE_GPUS_FLAG:-false}" = true ]; then
+        docker run -d \
+            --name taolie-host-agent \
+            --restart unless-stopped \
+            --gpus all \
+            --privileged \
+            --network taolie-network \
+            -e NVIDIA_VISIBLE_DEVICES=all \
+            -e NVIDIA_DRIVER_CAPABILITIES=all \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$(pwd)/config.yaml:/etc/taolie-host-agent/config.yaml:ro" \
+            -v taolie_agent_logs:/var/log/taolie-host-agent \
+            ghcr.io/banadda/host-agent:latest
+    else
+        docker run -d \
+            --name taolie-host-agent \
+            --restart unless-stopped \
+            --runtime nvidia \
+            --privileged \
+            --network taolie-network \
+            -e NVIDIA_VISIBLE_DEVICES=all \
+            -e NVIDIA_DRIVER_CAPABILITIES=all \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$(pwd)/config.yaml:/etc/taolie-host-agent/config.yaml:ro" \
+            -v taolie_agent_logs:/var/log/taolie-host-agent \
+            ghcr.io/banadda/host-agent:latest
+    fi
 fi
 
 print_success "Taolie Host Agent container started"
@@ -452,10 +522,15 @@ docker logs --tail 20 taolie-host-agent
 # Verify GPU access (if not CPU-only)
 if [ "$CPU_ONLY" = false ]; then
     print_info "Verifying GPU access..."
+    sleep 5  # Give container time to fully start
     if docker exec taolie-host-agent nvidia-smi &> /dev/null; then
         print_success "GPU is accessible from container"
+        # Show GPU info
+        echo ""
+        docker exec taolie-host-agent nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader | head -1
     else
         print_warning "GPU verification failed, but container is running"
+        print_info "The agent may still work, check logs: docker logs taolie-host-agent"
     fi
 fi
 
