@@ -7,7 +7,7 @@ Automated installation script for the Taolie Host Agent. Earn rewards by providi
 ### One-Line Installation
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/[YOUR_USERNAME]/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY
+curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY
 ```
 
 Replace `YOUR_API_KEY` with your actual API key from [Taolie Dashboard](https://taolie-ai.vercel.app/my-gpu).
@@ -44,7 +44,7 @@ Before running the installer, ensure you have:
 Uses auto-detected settings with default ports:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/[YOUR_USERNAME]/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY
+curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY
 ```
 
 ### Custom IP Address
@@ -52,7 +52,7 @@ curl -fsSL https://raw.githubusercontent.com/[YOUR_USERNAME]/taolie-host-agent-i
 Specify your public IP manually:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/[YOUR_USERNAME]/taolie-host-agent-installer/main/install.sh | bash -s -- \
+curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
   --api-key YOUR_API_KEY \
   --public-ip 1.2.3.4
 ```
@@ -62,7 +62,7 @@ curl -fsSL https://raw.githubusercontent.com/[YOUR_USERNAME]/taolie-host-agent-i
 Change default ports if needed:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/[YOUR_USERNAME]/taolie-host-agent-installer/main/install.sh | bash -s -- \
+curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
   --api-key YOUR_API_KEY \
   --ssh-port 2223 \
   --rental-port-1 8889 \
@@ -75,7 +75,7 @@ curl -fsSL https://raw.githubusercontent.com/[YOUR_USERNAME]/taolie-host-agent-i
 Force CPU-only mode (no GPU):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/[YOUR_USERNAME]/taolie-host-agent-installer/main/install.sh | bash -s -- \
+curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
   --api-key YOUR_API_KEY \
   --cpu-only
 ```
@@ -85,7 +85,7 @@ curl -fsSL https://raw.githubusercontent.com/[YOUR_USERNAME]/taolie-host-agent-i
 Set a custom PostgreSQL password:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/[YOUR_USERNAME]/taolie-host-agent-installer/main/install.sh | bash -s -- \
+curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
   --api-key YOUR_API_KEY \
   --db-password my_secure_password
 ```
@@ -319,7 +319,7 @@ The Taolie Host Agent consists of:
 ## Support
 
 - **Documentation**: [Taolie Dashboard](https://taolie-ai.vercel.app/my-gpu)
-- **Issues**: [GitHub Issues](https://github.com/[YOUR_USERNAME]/taolie-host-agent-installer/issues)
+- **Issues**: [GitHub Issues](https://github.com/BANADDA/taolie-host-agent-installer/issues)
 - **Community**: Join the Taolie community for support
 
 ## License
