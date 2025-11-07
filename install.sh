@@ -176,7 +176,7 @@ if [ -f /etc/os-release ]; then
         print_success "Ubuntu detected: $VERSION"
     else
         print_warning "This script is designed for Ubuntu. Your OS: $ID"
-        read -p "Continue anyway? (y/n) " -n 1 -r
+        read -p "Continue anyway? (y/n) " -n 1 -r < /dev/tty
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
             exit 1
@@ -274,7 +274,7 @@ if [ "$CPU_ONLY" = false ]; then
                         echo "  sudo systemctl restart docker"
                         echo "  docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu22.04 nvidia-smi"
                         echo ""
-                        read -p "Continue with CPU-only mode instead? (y/n) " -n 1 -r
+                        read -p "Continue with CPU-only mode instead? (y/n) " -n 1 -r < /dev/tty
                         echo
                         if [[ $REPLY =~ ^[Yy]$ ]]; then
                             print_warning "Switching to CPU-only mode"
@@ -293,7 +293,7 @@ if [ "$CPU_ONLY" = false ]; then
                     echo "  sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit"
                     echo "  sudo systemctl restart docker"
                     echo ""
-                    read -p "Continue with CPU-only mode instead? (y/n) " -n 1 -r
+                    read -p "Continue with CPU-only mode instead? (y/n) " -n 1 -r < /dev/tty
                     echo
                     if [[ $REPLY =~ ^[Yy]$ ]]; then
                         print_warning "Switching to CPU-only mode"
@@ -334,10 +334,10 @@ fi
 # Confirm IP with user
 echo ""
 print_warning "Please confirm your public IP address: $PUBLIC_IP"
-read -p "Is this correct? (y/n) " -n 1 -r
+read -p "Is this correct? (y/n) " -n 1 -r < /dev/tty
 echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    read -p "Enter your public IP address: " PUBLIC_IP
+    read -p "Enter your public IP address: " PUBLIC_IP < /dev/tty
 fi
 
 # Configure firewall
@@ -433,7 +433,7 @@ fi
 
 if docker ps -a --format '{{.Names}}' | grep -q "^taolie-postgres$"; then
     print_warning "Existing PostgreSQL container found"
-    read -p "Remove and recreate PostgreSQL? This will delete existing data! (y/n) " -n 1 -r
+    read -p "Remove and recreate PostgreSQL? This will delete existing data! (y/n) " -n 1 -r < /dev/tty
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         docker stop taolie-postgres &> /dev/null || true
@@ -582,7 +582,7 @@ ${YELLOW}⚠ Important Reminders:${NC}
 
 ${BLUE}Need Help?${NC}
   Documentation: https://taolie-ai.vercel.app/my-gpu
-  Support: https://help.taolie.ai
+  Support: https://help.manus.im
 
 EOF
 
