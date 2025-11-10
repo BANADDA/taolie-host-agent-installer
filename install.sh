@@ -224,23 +224,26 @@ if [ "$CPU_ONLY" = false ]; then
             
             # Pre-pull the test image to avoid timeout issues
             print_info "Pulling test image (this may take a moment on first run)..."
-            # Use valid CUDA base image tags
-            docker pull nvidia/cuda:12.6.0-base-ubuntu22.04 &> /dev/null || docker pull nvidia/cuda:11.8.0-base-ubuntu22.04 &> /dev/null
-            
-            # Determine which CUDA image is available
-            if docker images nvidia/cuda:12.6.0-base-ubuntu22.04 --format "{{.Repository}}" | grep -q cuda; then
-                TEST_IMAGE="nvidia/cuda:12.6.0-base-ubuntu22.04"
-            else
+            # Try multiple CUDA versions for better compatibility
+            if docker pull nvidia/cuda:12.2.0-base-ubuntu22.04 &> /dev/null; then
+                TEST_IMAGE="nvidia/cuda:12.2.0-base-ubuntu22.04"
+            elif docker pull nvidia/cuda:12.0.0-base-ubuntu22.04 &> /dev/null; then
+                TEST_IMAGE="nvidia/cuda:12.0.0-base-ubuntu22.04"
+            elif docker pull nvidia/cuda:11.8.0-base-ubuntu22.04 &> /dev/null; then
                 TEST_IMAGE="nvidia/cuda:11.8.0-base-ubuntu22.04"
+            else
+                print_error "Failed to pull NVIDIA CUDA test image"
+                TEST_IMAGE="nvidia/cuda:12.2.0-base-ubuntu22.04"
             fi
+            print_info "Using test image: $TEST_IMAGE"
             
             # Try --gpus all first (recommended method)
             print_info "Testing GPU access with --gpus all..."
-            if timeout 10 docker run --rm --gpus all $TEST_IMAGE nvidia-smi &> /dev/null; then
+            if timeout 30 docker run --rm --gpus all $TEST_IMAGE nvidia-smi > /dev/null 2>&1; then
                 print_success "NVIDIA Container Toolkit is properly configured (--gpus all)"
                 USE_GPUS_FLAG=true
             # Then try --runtime=nvidia as fallback
-            elif timeout 10 docker run --rm --runtime=nvidia $TEST_IMAGE nvidia-smi &> /dev/null; then
+            elif timeout 30 docker run --rm --runtime=nvidia $TEST_IMAGE nvidia-smi > /dev/null 2>&1; then
                 print_success "NVIDIA Container Toolkit is properly configured (--runtime=nvidia)"
                 USE_GPUS_FLAG=false
             else
@@ -260,10 +263,10 @@ if [ "$CPU_ONLY" = false ]; then
                     
                     # Test again
                     print_info "Testing NVIDIA Container Toolkit again..."
-                    if timeout 10 docker run --rm --gpus all $TEST_IMAGE nvidia-smi &> /dev/null; then
+                    if timeout 30 docker run --rm --gpus all $TEST_IMAGE nvidia-smi > /dev/null 2>&1; then
                         print_success "NVIDIA Container Toolkit is now working! (--gpus all)"
                         USE_GPUS_FLAG=true
-                    elif timeout 10 docker run --rm --runtime=nvidia $TEST_IMAGE nvidia-smi &> /dev/null; then
+                    elif timeout 30 docker run --rm --runtime=nvidia $TEST_IMAGE nvidia-smi > /dev/null 2>&1; then
                         print_success "NVIDIA Container Toolkit is now working! (--runtime=nvidia)"
                         USE_GPUS_FLAG=false
                     else
@@ -272,7 +275,7 @@ if [ "$CPU_ONLY" = false ]; then
                         echo "Please try manually:"
                         echo "  sudo nvidia-ctk runtime configure --runtime=docker"
                         echo "  sudo systemctl restart docker"
-                        echo "  docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu22.04 nvidia-smi"
+                        echo "  docker run --rm --gpus all $TEST_IMAGE nvidia-smi"
                         echo ""
                         read -p "Continue with CPU-only mode instead? (y/n) " -n 1 -r < /dev/tty
                         echo
