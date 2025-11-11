@@ -479,6 +479,7 @@ if [ "$CPU_ONLY" = true ]; then
         --privileged \
         --network taolie-network \
         -v /var/run/docker.sock:/var/run/docker.sock \
+        -v /usr/local/bin:/usr/local/bin \
         -v "$(pwd)/config.yaml:/etc/taolie-host-agent/config.yaml:ro" \
         -v taolie_agent_logs:/var/log/taolie-host-agent \
         ghcr.io/banadda/host-agent:latest
@@ -495,6 +496,7 @@ else
             -e NVIDIA_VISIBLE_DEVICES=all \
             -e NVIDIA_DRIVER_CAPABILITIES=all \
             -v /var/run/docker.sock:/var/run/docker.sock \
+            -v /usr/local/bin:/usr/local/bin \
             -v "$(pwd)/config.yaml:/etc/taolie-host-agent/config.yaml:ro" \
             -v taolie_agent_logs:/var/log/taolie-host-agent \
             ghcr.io/banadda/host-agent:latest
@@ -508,6 +510,7 @@ else
             -e NVIDIA_VISIBLE_DEVICES=all \
             -e NVIDIA_DRIVER_CAPABILITIES=all \
             -v /var/run/docker.sock:/var/run/docker.sock \
+            -v /usr/local/bin:/usr/local/bin \
             -v "$(pwd)/config.yaml:/etc/taolie-host-agent/config.yaml:ro" \
             -v taolie_agent_logs:/var/log/taolie-host-agent \
             ghcr.io/banadda/host-agent:latest
