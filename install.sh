@@ -6,15 +6,18 @@
 # This script automates the installation of the Taolie Host Agent
 # 
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY
+#   curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY --location YOUR_LOCATION
 #
 # Options:
 #   --api-key KEY          Your Taolie API key (required)
+#   --location LOCATION    Your geographic location (required)
 #   --public-ip IP         Your public IP address (auto-detected if not provided)
 #   --ssh-port PORT        SSH port (default: 2222)
 #   --rental-port-1 PORT   Rental port 1 (default: 8888)
 #   --rental-port-2 PORT   Rental port 2 (default: 9999)
 #   --rental-port-3 PORT   Rental port 3 (default: 7777)
+#   --external-port PORT   External port for custom service (optional)
+#   --internal-port PORT   Internal port for custom service (optional)
 #   --db-password PASS     PostgreSQL password (default: db_pass)
 #   --cpu-only             Install in CPU-only mode (default: auto-detect GPU)
 #   --help                 Show this help message
@@ -37,10 +40,13 @@ SSH_PORT=2222
 RENTAL_PORT_1=8888
 RENTAL_PORT_2=9999
 RENTAL_PORT_3=7777
+EXTERNAL_PORT=""
+INTERNAL_PORT=""
 DB_PASSWORD="db_pass"
 CPU_ONLY=false
 USE_GPUS_FLAG=false
 INSTALL_DIR="$HOME/taolie-host-agent"
+LOCATION=""
 
 # Helper functions
 print_info() {
@@ -70,28 +76,34 @@ show_help() {
 Taolie Host Agent - One-Line Installer
 
 Usage:
-  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY --location YOUR_LOCATION
 
 Options:
   --api-key KEY          Your Taolie API key (required)
+  --location LOCATION    Your geographic location (e.g., "US", "EU", "Asia") (required)
   --public-ip IP         Your public IP address (auto-detected if not provided)
   --ssh-port PORT        SSH port (default: 2222)
   --rental-port-1 PORT   Rental port 1 (default: 8888)
   --rental-port-2 PORT   Rental port 2 (default: 9999)
   --rental-port-3 PORT   Rental port 3 (default: 7777)
+  --external-port PORT   External port for custom service (optional)
+  --internal-port PORT   Internal port for custom service (optional, requires --external-port)
   --db-password PASS     PostgreSQL password (default: db_pass)
   --cpu-only             Install in CPU-only mode (default: auto-detect GPU)
   --help                 Show this help message
 
 Examples:
-  # Basic installation with API key
-  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123
+  # Basic installation with API key and location
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --location US
+
+  # With custom external/internal port mapping
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --location US --external-port 3030 --internal-port 3030
 
   # Custom ports and IP
-  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --public-ip 1.2.3.4 --ssh-port 2223
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --location US --public-ip 1.2.3.4 --ssh-port 2223
 
   # CPU-only mode
-  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --cpu-only
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --location US --cpu-only
 
 EOF
     exit 0
@@ -128,6 +140,18 @@ while [[ $# -gt 0 ]]; do
             DB_PASSWORD="$2"
             shift 2
             ;;
+        --external-port)
+            EXTERNAL_PORT="$2"
+            shift 2
+            ;;
+        --internal-port)
+            INTERNAL_PORT="$2"
+            shift 2
+            ;;
+        --location)
+            LOCATION="$2"
+            shift 2
+            ;;
         --cpu-only)
             CPU_ONLY=true
             shift
@@ -162,7 +186,30 @@ if [ -z "$API_KEY" ]; then
     echo ""
     echo "Get your API key from: https://taolie-ai.vercel.app/my-gpu"
     echo ""
-    echo "Usage: curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY"
+    echo "Usage: curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY --location YOUR_LOCATION"
+    exit 1
+fi
+
+# Prompt for location if not provided
+if [ -z "$LOCATION" ]; then
+    print_warning "Location is required for registration"
+    echo ""
+    echo "Please enter your geographic location (e.g., US, EU, Asia, Canada, etc.):"
+    read -p "Location: " LOCATION < /dev/tty
+    if [ -z "$LOCATION" ]; then
+        print_error "Location cannot be empty!"
+        exit 1
+    fi
+fi
+
+# Validate port consistency
+if [ -n "$EXTERNAL_PORT" ] && [ -z "$INTERNAL_PORT" ]; then
+    print_error "--external-port requires --internal-port to be specified"
+    exit 1
+fi
+
+if [ -z "$EXTERNAL_PORT" ] && [ -n "$INTERNAL_PORT" ]; then
+    print_error "--internal-port requires --external-port to be specified"
     exit 1
 fi
 
@@ -351,9 +398,16 @@ if command -v ufw &> /dev/null; then
     sudo ufw allow $RENTAL_PORT_1/tcp &> /dev/null || true
     sudo ufw allow $RENTAL_PORT_2/tcp &> /dev/null || true
     sudo ufw allow $RENTAL_PORT_3/tcp &> /dev/null || true
+    if [ -n "$EXTERNAL_PORT" ]; then
+        sudo ufw allow $EXTERNAL_PORT/tcp &> /dev/null || true
+    fi
     print_success "Firewall rules configured"
 else
-    print_warning "UFW not found. Please manually configure your firewall to allow ports: $SSH_PORT, $RENTAL_PORT_1, $RENTAL_PORT_2, $RENTAL_PORT_3"
+    PORTS_LIST="$SSH_PORT, $RENTAL_PORT_1, $RENTAL_PORT_2, $RENTAL_PORT_3"
+    if [ -n "$EXTERNAL_PORT" ]; then
+        PORTS_LIST="$PORTS_LIST, $EXTERNAL_PORT"
+    fi
+    print_warning "UFW not found. Please manually configure your firewall to allow ports: $PORTS_LIST"
 fi
 
 print_info "Port configuration:"
@@ -361,6 +415,9 @@ echo "  SSH Port:       $SSH_PORT"
 echo "  Rental Port 1:  $RENTAL_PORT_1"
 echo "  Rental Port 2:  $RENTAL_PORT_2"
 echo "  Rental Port 3:  $RENTAL_PORT_3"
+if [ -n "$EXTERNAL_PORT" ]; then
+    echo "  External Port:  $EXTERNAL_PORT -> Internal Port: $INTERNAL_PORT"
+fi
 
 print_header "Step 3: Installation Directory Setup"
 
@@ -376,6 +433,8 @@ cat > config.yaml << EOF
 agent:
   id: ""
   api_key: "$API_KEY"
+  resource_type: "$([ "$CPU_ONLY" = true ] && echo "cpu" || echo "gpu")"
+  location: "$LOCATION"
 
 network:
   public_ip: "$PUBLIC_IP"
@@ -383,7 +442,9 @@ network:
     ssh: $SSH_PORT
     rental_port_1: $RENTAL_PORT_1
     rental_port_2: $RENTAL_PORT_2
-    rental_port_3: $RENTAL_PORT_3
+    rental_port_3: $RENTAL_PORT_3$([ -n "$EXTERNAL_PORT" ] && echo "
+    external_port: $EXTERNAL_PORT
+    internal_port: $INTERNAL_PORT" || echo "")
 
 server:
   url: "https://api.taolie-server.work"
@@ -478,6 +539,7 @@ if [ "$CPU_ONLY" = true ]; then
         --restart unless-stopped \
         --privileged \
         --network taolie-network \
+        $([ -n "$EXTERNAL_PORT" ] && echo "-p $EXTERNAL_PORT:$INTERNAL_PORT") \
         -v /var/run/docker.sock:/var/run/docker.sock \
         -v /usr/local/bin:/usr/local/bin \
         -v "$(pwd)/config.yaml:/etc/taolie-host-agent/config.yaml:ro" \
@@ -493,6 +555,7 @@ else
             --gpus all \
             --privileged \
             --network taolie-network \
+            $([ -n "$EXTERNAL_PORT" ] && echo "-p $EXTERNAL_PORT:$INTERNAL_PORT") \
             -e NVIDIA_VISIBLE_DEVICES=all \
             -e NVIDIA_DRIVER_CAPABILITIES=all \
             -v /var/run/docker.sock:/var/run/docker.sock \
@@ -507,6 +570,7 @@ else
             --runtime nvidia \
             --privileged \
             --network taolie-network \
+            $([ -n "$EXTERNAL_PORT" ] && echo "-p $EXTERNAL_PORT:$INTERNAL_PORT") \
             -e NVIDIA_VISIBLE_DEVICES=all \
             -e NVIDIA_DRIVER_CAPABILITIES=all \
             -v /var/run/docker.sock:/var/run/docker.sock \
@@ -565,13 +629,16 @@ ${GREEN}✓ Taolie Host Agent has been successfully installed!${NC}
 ${BLUE}Configuration Summary:${NC}
   Installation Directory: $INSTALL_DIR
   Public IP:             $PUBLIC_IP
+  Location:              $LOCATION
   SSH Port:              $SSH_PORT
-  Rental Ports:          $RENTAL_PORT_1, $RENTAL_PORT_2, $RENTAL_PORT_3
+  Rental Ports:          $RENTAL_PORT_1, $RENTAL_PORT_2, $RENTAL_PORT_3$([ -n "$EXTERNAL_PORT" ] && echo "
+  External Port:         $EXTERNAL_PORT -> $INTERNAL_PORT" || echo "")
+  Resource Type:         $([ "$CPU_ONLY" = true ] && echo "CPU" || echo "GPU")
   Mode:                  $([ "$CPU_ONLY" = true ] && echo "CPU-only" || echo "GPU-enabled")
 
 ${BLUE}Next Steps:${NC}
   1. Check your resources at: https://taolie-ai.vercel.app/my-gpu
-  2. Your GPU will appear in the Resources tab once connected
+  2. Your $([ "$CPU_ONLY" = true ] && echo "CPU" || echo "GPU") will appear in the Resources tab once connected
   3. You'll start earning rewards when your machine is rented or used for mining
 
 ${BLUE}Useful Commands:${NC}
@@ -582,7 +649,7 @@ ${BLUE}Useful Commands:${NC}
   Remove agent:     docker stop taolie-host-agent && docker rm taolie-host-agent
 
 ${YELLOW}⚠ Important Reminders:${NC}
-  • Ensure ports $SSH_PORT, $RENTAL_PORT_1, $RENTAL_PORT_2, $RENTAL_PORT_3 are forwarded in your router
+  • Ensure ports $SSH_PORT, $RENTAL_PORT_1, $RENTAL_PORT_2, $RENTAL_PORT_3$([ -n "$EXTERNAL_PORT" ] && echo ", $EXTERNAL_PORT" || echo "") are forwarded in your router
   • If using cloud provider, update security groups to allow these ports
   • Keep your API key secure and never share it
 

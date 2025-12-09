@@ -7,10 +7,10 @@ Automated installation script for the Taolie Host Agent. Earn rewards by providi
 ### One-Line Installation
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY
+curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY --location YOUR_LOCATION
 ```
 
-Replace `YOUR_API_KEY` with your actual API key from [Taolie Dashboard](https://taolie-ai.vercel.app/my-gpu).
+Replace `YOUR_API_KEY` with your actual API key from [Taolie Dashboard](https://taolie-ai.vercel.app/my-gpu) and `YOUR_LOCATION` with your geographic location (e.g., US, EU, Asia, Canada).
 
 ## Prerequisites
 
@@ -37,6 +37,8 @@ Before running the installer, ensure you have:
 
 5. **API Key**: Get yours from [Taolie Dashboard](https://taolie-ai.vercel.app/my-gpu)
 
+6. **Location**: Your geographic location (e.g., US, EU, Asia, Canada)
+
 ## Installation Options
 
 ### Basic Installation
@@ -44,7 +46,9 @@ Before running the installer, ensure you have:
 Uses auto-detected settings with default ports:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY
+curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
+  --api-key YOUR_API_KEY \
+  --location YOUR_LOCATION
 ```
 
 ### Custom IP Address
@@ -54,6 +58,7 @@ Specify your public IP manually:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
   --api-key YOUR_API_KEY \
+  --location YOUR_LOCATION \
   --public-ip 1.2.3.4
 ```
 
@@ -64,6 +69,7 @@ Change default ports if needed:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
   --api-key YOUR_API_KEY \
+  --location YOUR_LOCATION \
   --ssh-port 2223 \
   --rental-port-1 8889 \
   --rental-port-2 9998 \
@@ -77,6 +83,7 @@ Force CPU-only mode (no GPU):
 ```bash
 curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
   --api-key YOUR_API_KEY \
+  --location YOUR_LOCATION \
   --cpu-only
 ```
 
@@ -87,6 +94,7 @@ Set a custom PostgreSQL password:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
   --api-key YOUR_API_KEY \
+  --location YOUR_LOCATION \
   --db-password my_secure_password
 ```
 
@@ -95,6 +103,7 @@ curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--api-key KEY` | Your Taolie API key (required) | - |
+| `--location LOCATION` | Your geographic location (required) | - |
 | `--public-ip IP` | Your public IP address | Auto-detected |
 | `--ssh-port PORT` | SSH access port | 2222 |
 | `--rental-port-1 PORT` | Application service port 1 | 8888 |
