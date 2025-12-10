@@ -16,8 +16,8 @@
 #   --rental-port-1 PORT   Rental port 1 (default: 8888)
 #   --rental-port-2 PORT   Rental port 2 (default: 9999)
 #   --rental-port-3 PORT   Rental port 3 (default: 7777)
-#   --external-port PORT   External port for custom service (optional)
-#   --internal-port PORT   Internal port for custom service (optional)
+#   --external-port PORT   External port for rental containers (optional)
+#   --internal-port PORT   Internal port for rental containers (optional)
 #   --db-password PASS     PostgreSQL password (default: db_pass)
 #   --cpu-only             Install in CPU-only mode (default: auto-detect GPU)
 #   --help                 Show this help message
@@ -86,8 +86,8 @@ Options:
   --rental-port-1 PORT   Rental port 1 (default: 8888)
   --rental-port-2 PORT   Rental port 2 (default: 9999)
   --rental-port-3 PORT   Rental port 3 (default: 7777)
-  --external-port PORT   External port for custom service (optional)
-  --internal-port PORT   Internal port for custom service (optional, requires --external-port)
+  --external-port PORT   External port for rental containers (optional)
+  --internal-port PORT   Internal port for rental containers (optional, requires --external-port)
   --db-password PASS     PostgreSQL password (default: db_pass)
   --cpu-only             Install in CPU-only mode (default: auto-detect GPU)
   --help                 Show this help message
@@ -539,7 +539,6 @@ if [ "$CPU_ONLY" = true ]; then
         --restart unless-stopped \
         --privileged \
         --network taolie-network \
-        $([ -n "$EXTERNAL_PORT" ] && echo "-p $EXTERNAL_PORT:$INTERNAL_PORT") \
         -v /var/run/docker.sock:/var/run/docker.sock \
         -v /usr/local/bin:/usr/local/bin \
         -v "$(pwd)/config.yaml:/etc/taolie-host-agent/config.yaml:ro" \
@@ -555,7 +554,6 @@ else
             --gpus all \
             --privileged \
             --network taolie-network \
-            $([ -n "$EXTERNAL_PORT" ] && echo "-p $EXTERNAL_PORT:$INTERNAL_PORT") \
             -e NVIDIA_VISIBLE_DEVICES=all \
             -e NVIDIA_DRIVER_CAPABILITIES=all \
             -v /var/run/docker.sock:/var/run/docker.sock \
@@ -570,7 +568,6 @@ else
             --runtime nvidia \
             --privileged \
             --network taolie-network \
-            $([ -n "$EXTERNAL_PORT" ] && echo "-p $EXTERNAL_PORT:$INTERNAL_PORT") \
             -e NVIDIA_VISIBLE_DEVICES=all \
             -e NVIDIA_DRIVER_CAPABILITIES=all \
             -v /var/run/docker.sock:/var/run/docker.sock \
