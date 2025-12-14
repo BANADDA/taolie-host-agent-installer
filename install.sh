@@ -20,6 +20,7 @@
 #   --internal-port PORT   Internal port for rental containers (optional)
 #   --db-password PASS     PostgreSQL password (default: db_pass)
 #   --cpu-only             Install in CPU-only mode (default: auto-detect GPU)
+#   --marketplace          Enable marketplace mode (for VM rentals, auto-setup VM requirements)
 #   --help                 Show this help message
 #
 #############################################################################
@@ -44,6 +45,7 @@ EXTERNAL_PORT=""
 INTERNAL_PORT=""
 DB_PASSWORD="db_pass"
 CPU_ONLY=false
+MARKETPLACE=false
 USE_GPUS_FLAG=false
 INSTALL_DIR="$HOME/taolie-host-agent"
 LOCATION=""
@@ -90,11 +92,15 @@ Options:
   --internal-port PORT   Internal port for rental containers (optional, requires --external-port)
   --db-password PASS     PostgreSQL password (default: db_pass)
   --cpu-only             Install in CPU-only mode (default: auto-detect GPU)
+  --marketplace          Enable marketplace mode (for VM rentals, auto-setup VM requirements)
   --help                 Show this help message
 
 Examples:
   # Basic installation with API key and location
   curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --location US
+
+  # Marketplace mode (for VM rentals)
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --location US --marketplace
 
   # With custom external/internal port mapping
   curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --location US --external-port 3030 --internal-port 3030
@@ -154,6 +160,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --cpu-only)
             CPU_ONLY=true
+            shift
+            ;;
+        --marketplace)
+            MARKETPLACE=true
             shift
             ;;
         --help)
@@ -434,7 +444,8 @@ agent:
   id: ""
   api_key: "$API_KEY"
   resource_type: "$([ "$CPU_ONLY" = true ] && echo "cpu" || echo "gpu")"
-  location: "$LOCATION"
+  location: "$LOCATION"$([ "$MARKETPLACE" = true ] && echo "
+  marketplace: true" || echo "")
 
 network:
   public_ip: "$PUBLIC_IP"
@@ -631,7 +642,8 @@ ${BLUE}Configuration Summary:${NC}
   Rental Ports:          $RENTAL_PORT_1, $RENTAL_PORT_2, $RENTAL_PORT_3$([ -n "$EXTERNAL_PORT" ] && echo "
   External Port:         $EXTERNAL_PORT -> $INTERNAL_PORT" || echo "")
   Resource Type:         $([ "$CPU_ONLY" = true ] && echo "CPU" || echo "GPU")
-  Mode:                  $([ "$CPU_ONLY" = true ] && echo "CPU-only" || echo "GPU-enabled")
+  Mode:                  $([ "$CPU_ONLY" = true ] && echo "CPU-only" || echo "GPU-enabled")$([ "$MARKETPLACE" = true ] && echo "
+  Marketplace Mode:     Enabled (VM rentals)")
 
 ${BLUE}Next Steps:${NC}
   1. Check your resources at: https://taolie-ai.vercel.app/my-gpu
