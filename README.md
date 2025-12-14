@@ -98,6 +98,29 @@ curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer
   --db-password my_secure_password
 ```
 
+### Marketplace Mode (VM Rentals)
+
+Enable marketplace mode for VM rentals with auto-setup of VM requirements:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
+  --api-key YOUR_API_KEY \
+  --location YOUR_LOCATION \
+  --marketplace
+```
+
+### Custom External/Internal Ports
+
+Configure custom external and internal ports for rental containers:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
+  --api-key YOUR_API_KEY \
+  --location YOUR_LOCATION \
+  --external-port 3030 \
+  --internal-port 3030
+```
+
 ## Command-Line Options
 
 | Option | Description | Default |
@@ -109,8 +132,11 @@ curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer
 | `--rental-port-1 PORT` | Application service port 1 | 8888 |
 | `--rental-port-2 PORT` | Application service port 2 | 9999 |
 | `--rental-port-3 PORT` | Application service port 3 | 7777 |
+| `--external-port PORT` | External port for rental containers | - |
+| `--internal-port PORT` | Internal port for rental containers (requires --external-port) | - |
 | `--db-password PASS` | PostgreSQL password | db_pass |
 | `--cpu-only` | Install in CPU-only mode | Auto-detect GPU |
+| `--marketplace` | Enable marketplace mode (for VM rentals, auto-setup VM requirements) | Disabled |
 | `--help` | Show help message | - |
 
 ## What the Installer Does
@@ -127,6 +153,25 @@ The installation script automatically:
 8. ✅ Deploys Taolie Host Agent container
 9. ✅ Verifies installation and GPU access
 10. ✅ Provides status report and next steps
+
+## Marketplace Mode
+
+Marketplace mode enables VM rental capabilities with automatic setup of VM requirements. When enabled:
+
+- The agent is configured for VM rentals
+- VM requirements are automatically set up
+- Your host will be available for VM marketplace rentals
+
+To enable marketplace mode, simply add the `--marketplace` flag during installation:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
+  --api-key YOUR_API_KEY \
+  --location YOUR_LOCATION \
+  --marketplace
+```
+
+The marketplace mode setting is stored in your `config.yaml` file and can be verified in the installation summary.
 
 ## Network Configuration
 

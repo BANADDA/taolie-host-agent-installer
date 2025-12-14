@@ -214,7 +214,7 @@ fi
 
 # Validate port consistency
 if [ -n "$EXTERNAL_PORT" ] && [ -z "$INTERNAL_PORT" ]; then
-    print_error "--external-port requires --internal-port to be specified"
+    print_error "--external-port requires --external-port to be specified"
     exit 1
 fi
 
