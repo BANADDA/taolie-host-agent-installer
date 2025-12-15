@@ -214,7 +214,7 @@ fi
 
 # Validate port consistency
 if [ -n "$EXTERNAL_PORT" ] && [ -z "$INTERNAL_PORT" ]; then
-    print_error "--external-port requires --external-port to be specified"
+    print_error "--external-port requires --internal-port to be specified"
     exit 1
 fi
 
@@ -538,7 +538,81 @@ else
     print_info "PostgreSQL container already running"
 fi
 
-print_header "Step 5: Deploying Taolie Host Agent"
+print_header "Step 5: LXD Setup (Marketplace Mode)"
+
+# Install and configure LXD if marketplace mode is enabled
+if [ "$MARKETPLACE" = true ]; then
+    print_info "Marketplace mode enabled - setting up LXD..."
+    
+    # Check if LXD is installed (check both snap and system package)
+    LXD_INSTALLED=false
+    if command -v lxd &> /dev/null; then
+        LXD_INSTALLED=true
+    elif snap list 2>/dev/null | grep -q "^lxd "; then
+        LXD_INSTALLED=true
+    fi
+    
+    if [ "$LXD_INSTALLED" = false ]; then
+        print_info "Installing LXD via snap..."
+        sudo snap install lxd
+        if [ $? -ne 0 ]; then
+            print_error "Failed to install LXD"
+            echo "Please install LXD manually: sudo snap install lxd"
+            exit 1
+        fi
+        print_success "LXD installed"
+        sleep 2  # Give snap time to set up
+    else
+        print_info "LXD is already installed"
+    fi
+    
+    # Check if LXD is initialized by checking for socket or config
+    LXD_INITIALIZED=false
+    if [ -S /var/snap/lxd/common/lxd/unix.socket ] 2>/dev/null; then
+        LXD_INITIALIZED=true
+    elif [ -d /var/snap/lxd/common/lxd ] 2>/dev/null; then
+        # Try to check if LXD is ready
+        if sudo lxd waitready --timeout=5 &> /dev/null; then
+            LXD_INITIALIZED=true
+        fi
+    fi
+    
+    if [ "$LXD_INITIALIZED" = false ]; then
+        print_info "Initializing LXD (non-interactive)..."
+        sudo lxd init --auto
+        if [ $? -ne 0 ]; then
+            print_error "Failed to initialize LXD"
+            echo "Please initialize LXD manually: sudo lxd init --auto"
+            exit 1
+        fi
+        print_success "LXD initialized"
+        sleep 2  # Give LXD time to create socket
+    else
+        print_info "LXD is already initialized"
+    fi
+    
+    # Verify LXD socket exists and is accessible
+    if [ ! -S /var/snap/lxd/common/lxd/unix.socket ]; then
+        print_warning "LXD socket not found, waiting for LXD to be ready..."
+        sudo lxd waitready --timeout=30
+        if [ ! -S /var/snap/lxd/common/lxd/unix.socket ]; then
+            print_error "LXD socket still not found at /var/snap/lxd/common/lxd/unix.socket"
+            echo "Please check LXD installation: sudo lxd waitready"
+            exit 1
+        fi
+    fi
+    
+    # Verify socket permissions (should be accessible)
+    if [ ! -r /var/snap/lxd/common/lxd/unix.socket ]; then
+        print_warning "LXD socket exists but may not be readable"
+    fi
+    
+    print_success "LXD socket is available at /var/snap/lxd/common/lxd/unix.socket"
+else
+    print_info "Marketplace mode not enabled - skipping LXD setup"
+fi
+
+print_header "Step 6: Deploying Taolie Host Agent"
 
 # Run Taolie Host Agent
 print_info "Starting Taolie Host Agent..."
@@ -554,6 +628,7 @@ if [ "$CPU_ONLY" = true ]; then
         -v /usr/local/bin:/usr/local/bin \
         -v "$(pwd)/config.yaml:/etc/taolie-host-agent/config.yaml:ro" \
         -v taolie_agent_logs:/var/log/taolie-host-agent \
+        $([ "$MARKETPLACE" = true ] && echo "-v /var/snap/lxd/common/lxd/unix.socket:/var/snap/lxd/common/lxd/unix.socket") \
         ghcr.io/banadda/host-agent:latest
 else
     print_info "Deploying with GPU support..."
@@ -571,6 +646,7 @@ else
             -v /usr/local/bin:/usr/local/bin \
             -v "$(pwd)/config.yaml:/etc/taolie-host-agent/config.yaml:ro" \
             -v taolie_agent_logs:/var/log/taolie-host-agent \
+            $([ "$MARKETPLACE" = true ] && echo "-v /var/snap/lxd/common/lxd/unix.socket:/var/snap/lxd/common/lxd/unix.socket") \
             ghcr.io/banadda/host-agent:latest
     else
         docker run -d \
@@ -585,13 +661,14 @@ else
             -v /usr/local/bin:/usr/local/bin \
             -v "$(pwd)/config.yaml:/etc/taolie-host-agent/config.yaml:ro" \
             -v taolie_agent_logs:/var/log/taolie-host-agent \
+            $([ "$MARKETPLACE" = true ] && echo "-v /var/snap/lxd/common/lxd/unix.socket:/var/snap/lxd/common/lxd/unix.socket") \
             ghcr.io/banadda/host-agent:latest
     fi
 fi
 
 print_success "Taolie Host Agent container started"
 
-print_header "Step 6: Verification"
+print_header "Step 7: Verification"
 
 # Wait for container to start
 print_info "Waiting for agent to initialize..."
