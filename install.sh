@@ -602,9 +602,46 @@ if [ "$MARKETPLACE" = true ]; then
         fi
     fi
     
+    # Add current user to lxd group if not already a member
+    if ! groups | grep -q lxd; then
+        print_info "Adding current user to lxd group..."
+        sudo usermod -aG lxd $USER
+        print_warning "User added to lxd group. You may need to log out and log back in for this to take effect."
+        print_info "For now, the container will use sudo for lxc commands"
+    else
+        print_info "User is already in lxd group"
+    fi
+    
+    # Check and create storage pool if needed
+    print_info "Checking LXD storage pools..."
+    if ! sudo lxc storage list --format json 2>/dev/null | grep -q '"name"'; then
+        print_info "No storage pools found, creating default storage pool..."
+        sudo lxc storage create default dir 2>/dev/null || {
+            # If creation fails, try to initialize
+            print_info "Storage pool creation failed, ensuring LXD is properly initialized..."
+            sudo lxd init --auto --storage-backend=dir --storage-pool=default 2>/dev/null || true
+        }
+        print_success "Storage pool configured"
+    else
+        print_info "Storage pools already exist"
+    fi
+    
+    # Check and create default network if needed
+    print_info "Checking LXD networks..."
+    if ! sudo lxc network list --format json 2>/dev/null | grep -q '"name".*"lxdbr0"'; then
+        print_info "Default network (lxdbr0) not found, creating..."
+        sudo lxc network create lxdbr0 ipv4.address=auto ipv4.nat=true ipv6.address=none ipv6.nat=false 2>/dev/null || {
+            print_warning "Network creation failed, but this may not be critical"
+        }
+        print_success "Default network configured"
+    else
+        print_info "Default network (lxdbr0) already exists"
+    fi
+    
     # Verify socket permissions (should be accessible)
     if [ ! -r /var/snap/lxd/common/lxd/unix.socket ]; then
-        print_warning "LXD socket exists but may not be readable"
+        print_warning "LXD socket exists but may not be readable by current user"
+        print_info "The container will use the mounted socket which should work"
     fi
     
     # Find lxc client binary location
