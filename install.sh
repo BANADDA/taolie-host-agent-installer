@@ -607,9 +607,26 @@ if [ "$MARKETPLACE" = true ]; then
         print_warning "LXD socket exists but may not be readable"
     fi
     
-    print_success "LXD socket is available at /var/snap/lxd/common/lxd/unix.socket"
+    # Find lxc client binary location
+    LXC_BINARY=""
+    if command -v lxc &> /dev/null; then
+        LXC_BINARY=$(command -v lxc)
+    elif [ -f /snap/bin/lxc ]; then
+        LXC_BINARY="/snap/bin/lxc"
+    elif [ -f /usr/bin/lxc ]; then
+        LXC_BINARY="/usr/bin/lxc"
+    fi
+    
+    if [ -n "$LXC_BINARY" ]; then
+        print_success "LXD socket is available at /var/snap/lxd/common/lxd/unix.socket"
+        print_success "LXC client found at $LXC_BINARY"
+    else
+        print_warning "LXC client not found - VM creation may not work"
+        print_info "LXD socket is available, but lxc command is missing"
+    fi
 else
     print_info "Marketplace mode not enabled - skipping LXD setup"
+    LXC_BINARY=""
 fi
 
 print_header "Step 6: Deploying Taolie Host Agent"
@@ -629,6 +646,7 @@ if [ "$CPU_ONLY" = true ]; then
         -v "$(pwd)/config.yaml:/etc/taolie-host-agent/config.yaml:ro" \
         -v taolie_agent_logs:/var/log/taolie-host-agent \
         $([ "$MARKETPLACE" = true ] && echo "-v /var/snap/lxd/common/lxd/unix.socket:/var/snap/lxd/common/lxd/unix.socket") \
+        $([ "$MARKETPLACE" = true ] && [ -f /snap/bin/lxc ] && echo "-v /snap:/snap:ro") \
         ghcr.io/banadda/host-agent:latest
 else
     print_info "Deploying with GPU support..."
@@ -647,6 +665,7 @@ else
             -v "$(pwd)/config.yaml:/etc/taolie-host-agent/config.yaml:ro" \
             -v taolie_agent_logs:/var/log/taolie-host-agent \
             $([ "$MARKETPLACE" = true ] && echo "-v /var/snap/lxd/common/lxd/unix.socket:/var/snap/lxd/common/lxd/unix.socket") \
+            $([ "$MARKETPLACE" = true ] && [ -f /snap/bin/lxc ] && echo "-v /snap:/snap:ro") \
             ghcr.io/banadda/host-agent:latest
     else
         docker run -d \
@@ -662,6 +681,7 @@ else
             -v "$(pwd)/config.yaml:/etc/taolie-host-agent/config.yaml:ro" \
             -v taolie_agent_logs:/var/log/taolie-host-agent \
             $([ "$MARKETPLACE" = true ] && echo "-v /var/snap/lxd/common/lxd/unix.socket:/var/snap/lxd/common/lxd/unix.socket") \
+            $([ "$MARKETPLACE" = true ] && [ -f /snap/bin/lxc ] && echo "-v /snap:/snap:ro") \
             ghcr.io/banadda/host-agent:latest
     fi
 fi
