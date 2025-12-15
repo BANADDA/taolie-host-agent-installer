@@ -661,23 +661,33 @@ if [ "$MARKETPLACE" = true ]; then
         # Create a wrapper script for lxc in /usr/local/bin (which is mounted into container)
         # This allows the container to use the host's lxc command
         print_info "Creating LXC wrapper script for container access..."
-        if [ -f /snap/bin/lxc ]; then
-            sudo tee /usr/local/bin/lxc > /dev/null << 'EOF'
+        # Check for the actual lxc binary location
+        LXC_BINARY_PATH=""
+        if [ -f /snap/lxd/current/bin/lxc ]; then
+            LXC_BINARY_PATH="/snap/lxd/current/bin/lxc"
+        elif [ -f /snap/bin/lxc ]; then
+            LXC_BINARY_PATH="/snap/bin/lxc"
+        elif [ -f /usr/bin/lxc ]; then
+            LXC_BINARY_PATH="/usr/bin/lxc"
+        fi
+        
+        if [ -n "$LXC_BINARY_PATH" ]; then
+            sudo tee /usr/local/bin/lxc > /dev/null << EOF
 #!/bin/bash
-# LXC wrapper to use host's lxc command via snap
-# This script runs inside the container and calls the host's lxc via mounted /snap
-export PATH="/snap/bin:$PATH"
-if [ -f /snap/bin/lxc ]; then
-    exec /snap/bin/lxc "$@"
+# LXC wrapper to use host's lxc command via mounted /snap directory
+# Sets LXD_SOCKET to point to the mounted socket location
+export LXD_SOCKET=/var/snap/lxd/common/lxd/unix.socket
+if [ -f $LXC_BINARY_PATH ]; then
+    exec $LXC_BINARY_PATH "\$@"
 else
-    echo "Error: lxc not found at /snap/bin/lxc" >&2
+    echo "Error: lxc not found at $LXC_BINARY_PATH" >&2
     exit 1
 fi
 EOF
             sudo chmod +x /usr/local/bin/lxc
-            print_success "LXC wrapper script created at /usr/local/bin/lxc"
+            print_success "LXC wrapper script created at /usr/local/bin/lxc (using $LXC_BINARY_PATH)"
         else
-            print_warning "Could not create LXC wrapper - /snap/bin/lxc not found"
+            print_warning "Could not create LXC wrapper - lxc binary not found"
         fi
     else
         print_warning "LXC client not found - VM creation may not work"
