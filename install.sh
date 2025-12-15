@@ -620,6 +620,28 @@ if [ "$MARKETPLACE" = true ]; then
     if [ -n "$LXC_BINARY" ]; then
         print_success "LXD socket is available at /var/snap/lxd/common/lxd/unix.socket"
         print_success "LXC client found at $LXC_BINARY"
+        
+        # Create a wrapper script for lxc in /usr/local/bin (which is mounted into container)
+        # This allows the container to use the host's lxc command
+        print_info "Creating LXC wrapper script for container access..."
+        if [ -f /snap/bin/lxc ]; then
+            sudo tee /usr/local/bin/lxc > /dev/null << 'EOF'
+#!/bin/bash
+# LXC wrapper to use host's lxc command via snap
+# This script runs inside the container and calls the host's lxc via mounted /snap
+export PATH="/snap/bin:$PATH"
+if [ -f /snap/bin/lxc ]; then
+    exec /snap/bin/lxc "$@"
+else
+    echo "Error: lxc not found at /snap/bin/lxc" >&2
+    exit 1
+fi
+EOF
+            sudo chmod +x /usr/local/bin/lxc
+            print_success "LXC wrapper script created at /usr/local/bin/lxc"
+        else
+            print_warning "Could not create LXC wrapper - /snap/bin/lxc not found"
+        fi
     else
         print_warning "LXC client not found - VM creation may not work"
         print_info "LXD socket is available, but lxc command is missing"
