@@ -538,167 +538,7 @@ else
     print_info "PostgreSQL container already running"
 fi
 
-print_header "Step 5: LXD Setup (Marketplace Mode)"
-
-# Install and configure LXD if marketplace mode is enabled
-if [ "$MARKETPLACE" = true ]; then
-    print_info "Marketplace mode enabled - setting up LXD..."
-    
-    # Check if LXD is installed (check both snap and system package)
-    LXD_INSTALLED=false
-    if command -v lxd &> /dev/null; then
-        LXD_INSTALLED=true
-    elif snap list 2>/dev/null | grep -q "^lxd "; then
-        LXD_INSTALLED=true
-    fi
-    
-    if [ "$LXD_INSTALLED" = false ]; then
-        print_info "Installing LXD via snap..."
-        sudo snap install lxd
-        if [ $? -ne 0 ]; then
-            print_error "Failed to install LXD"
-            echo "Please install LXD manually: sudo snap install lxd"
-            exit 1
-        fi
-        print_success "LXD installed"
-        sleep 2  # Give snap time to set up
-    else
-        print_info "LXD is already installed"
-    fi
-    
-    # Check if LXD is initialized by checking for socket or config
-    LXD_INITIALIZED=false
-    if [ -S /var/snap/lxd/common/lxd/unix.socket ] 2>/dev/null; then
-        LXD_INITIALIZED=true
-    elif [ -d /var/snap/lxd/common/lxd ] 2>/dev/null; then
-        # Try to check if LXD is ready
-        if sudo lxd waitready --timeout=5 &> /dev/null; then
-            LXD_INITIALIZED=true
-        fi
-    fi
-    
-    if [ "$LXD_INITIALIZED" = false ]; then
-        print_info "Initializing LXD (non-interactive)..."
-        sudo lxd init --auto
-        if [ $? -ne 0 ]; then
-            print_error "Failed to initialize LXD"
-            echo "Please initialize LXD manually: sudo lxd init --auto"
-            exit 1
-        fi
-        print_success "LXD initialized"
-        sleep 2  # Give LXD time to create socket
-    else
-        print_info "LXD is already initialized"
-    fi
-    
-    # Verify LXD socket exists and is accessible
-    if [ ! -S /var/snap/lxd/common/lxd/unix.socket ]; then
-        print_warning "LXD socket not found, waiting for LXD to be ready..."
-        sudo lxd waitready --timeout=30
-        if [ ! -S /var/snap/lxd/common/lxd/unix.socket ]; then
-            print_error "LXD socket still not found at /var/snap/lxd/common/lxd/unix.socket"
-            echo "Please check LXD installation: sudo lxd waitready"
-            exit 1
-        fi
-    fi
-    
-    # Add current user to lxd group if not already a member
-    if ! groups | grep -q lxd; then
-        print_info "Adding current user to lxd group..."
-        sudo usermod -aG lxd $USER
-        print_warning "User added to lxd group. You may need to log out and log back in for this to take effect."
-        print_info "For now, the container will use sudo for lxc commands"
-    else
-        print_info "User is already in lxd group"
-    fi
-    
-    # Check and create storage pool if needed
-    print_info "Checking LXD storage pools..."
-    if ! sudo lxc storage list --format json 2>/dev/null | grep -q '"name"'; then
-        print_info "No storage pools found, creating default storage pool..."
-        sudo lxc storage create default dir 2>/dev/null || {
-            # If creation fails, try to initialize
-            print_info "Storage pool creation failed, ensuring LXD is properly initialized..."
-            sudo lxd init --auto --storage-backend=dir --storage-pool=default 2>/dev/null || true
-        }
-        print_success "Storage pool configured"
-    else
-        print_info "Storage pools already exist"
-    fi
-    
-    # Check and create default network if needed
-    print_info "Checking LXD networks..."
-    if ! sudo lxc network list --format json 2>/dev/null | grep -q '"name".*"lxdbr0"'; then
-        print_info "Default network (lxdbr0) not found, creating..."
-        sudo lxc network create lxdbr0 ipv4.address=auto ipv4.nat=true ipv6.address=none ipv6.nat=false 2>/dev/null || {
-            print_warning "Network creation failed, but this may not be critical"
-        }
-        print_success "Default network configured"
-    else
-        print_info "Default network (lxdbr0) already exists"
-    fi
-    
-    # Verify socket permissions (should be accessible)
-    if [ ! -r /var/snap/lxd/common/lxd/unix.socket ]; then
-        print_warning "LXD socket exists but may not be readable by current user"
-        print_info "The container will use the mounted socket which should work"
-    fi
-    
-    # Find lxc client binary location
-    LXC_BINARY=""
-    if command -v lxc &> /dev/null; then
-        LXC_BINARY=$(command -v lxc)
-    elif [ -f /snap/bin/lxc ]; then
-        LXC_BINARY="/snap/bin/lxc"
-    elif [ -f /usr/bin/lxc ]; then
-        LXC_BINARY="/usr/bin/lxc"
-    fi
-    
-    if [ -n "$LXC_BINARY" ]; then
-        print_success "LXD socket is available at /var/snap/lxd/common/lxd/unix.socket"
-        print_success "LXC client found at $LXC_BINARY"
-        
-        # Create a wrapper script for lxc in /usr/local/bin (which is mounted into container)
-        # This allows the container to use the host's lxc command
-        print_info "Creating LXC wrapper script for container access..."
-        # Check for the actual lxc binary location
-        LXC_BINARY_PATH=""
-        if [ -f /snap/lxd/current/bin/lxc ]; then
-            LXC_BINARY_PATH="/snap/lxd/current/bin/lxc"
-        elif [ -f /snap/bin/lxc ]; then
-            LXC_BINARY_PATH="/snap/bin/lxc"
-        elif [ -f /usr/bin/lxc ]; then
-            LXC_BINARY_PATH="/usr/bin/lxc"
-        fi
-        
-        if [ -n "$LXC_BINARY_PATH" ]; then
-            sudo tee /usr/local/bin/lxc > /dev/null << EOF
-#!/bin/bash
-# LXC wrapper to use host's lxc command via mounted /snap directory
-# Sets LXD_SOCKET to point to the mounted socket location
-export LXD_SOCKET=/var/snap/lxd/common/lxd/unix.socket
-if [ -f $LXC_BINARY_PATH ]; then
-    exec $LXC_BINARY_PATH "\$@"
-else
-    echo "Error: lxc not found at $LXC_BINARY_PATH" >&2
-    exit 1
-fi
-EOF
-            sudo chmod +x /usr/local/bin/lxc
-            print_success "LXC wrapper script created at /usr/local/bin/lxc (using $LXC_BINARY_PATH)"
-        else
-            print_warning "Could not create LXC wrapper - lxc binary not found"
-        fi
-    else
-        print_warning "LXC client not found - VM creation may not work"
-        print_info "LXD socket is available, but lxc command is missing"
-    fi
-else
-    print_info "Marketplace mode not enabled - skipping LXD setup"
-    LXC_BINARY=""
-fi
-
-print_header "Step 6: Deploying Taolie Host Agent"
+print_header "Step 5: Deploying Taolie Host Agent"
 
 # Run Taolie Host Agent
 print_info "Starting Taolie Host Agent..."
@@ -714,8 +554,6 @@ if [ "$CPU_ONLY" = true ]; then
         -v /usr/local/bin:/usr/local/bin \
         -v "$(pwd)/config.yaml:/etc/taolie-host-agent/config.yaml:ro" \
         -v taolie_agent_logs:/var/log/taolie-host-agent \
-        $([ "$MARKETPLACE" = true ] && echo "-v /var/snap/lxd/common/lxd/unix.socket:/var/snap/lxd/common/lxd/unix.socket") \
-        $([ "$MARKETPLACE" = true ] && [ -f /snap/bin/lxc ] && echo "-v /snap:/snap:ro") \
         ghcr.io/banadda/host-agent:latest
 else
     print_info "Deploying with GPU support..."
@@ -733,8 +571,6 @@ else
             -v /usr/local/bin:/usr/local/bin \
             -v "$(pwd)/config.yaml:/etc/taolie-host-agent/config.yaml:ro" \
             -v taolie_agent_logs:/var/log/taolie-host-agent \
-            $([ "$MARKETPLACE" = true ] && echo "-v /var/snap/lxd/common/lxd/unix.socket:/var/snap/lxd/common/lxd/unix.socket") \
-            $([ "$MARKETPLACE" = true ] && [ -f /snap/bin/lxc ] && echo "-v /snap:/snap:ro") \
             ghcr.io/banadda/host-agent:latest
     else
         docker run -d \
@@ -749,15 +585,13 @@ else
             -v /usr/local/bin:/usr/local/bin \
             -v "$(pwd)/config.yaml:/etc/taolie-host-agent/config.yaml:ro" \
             -v taolie_agent_logs:/var/log/taolie-host-agent \
-            $([ "$MARKETPLACE" = true ] && echo "-v /var/snap/lxd/common/lxd/unix.socket:/var/snap/lxd/common/lxd/unix.socket") \
-            $([ "$MARKETPLACE" = true ] && [ -f /snap/bin/lxc ] && echo "-v /snap:/snap:ro") \
             ghcr.io/banadda/host-agent:latest
     fi
 fi
 
 print_success "Taolie Host Agent container started"
 
-print_header "Step 7: Verification"
+print_header "Step 6: Verification"
 
 # Wait for container to start
 print_info "Waiting for agent to initialize..."
