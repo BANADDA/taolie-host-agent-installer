@@ -10,7 +10,7 @@
 #
 # Options:
 #   --api-key KEY          Your Taolie API key (required)
-#   --location LOCATION    Your geographic location (required)
+#   --location LOCATION    Your geographic location (auto-detected if not provided)
 #   --public-ip IP         Your public IP address (auto-detected if not provided)
 #   --ssh-port PORT        SSH port (default: 2222)
 #   --rental-port-1 PORT   Rental port 1 (default: 8888)
@@ -78,11 +78,11 @@ show_help() {
 Taolie Host Agent - One-Line Installer
 
 Usage:
-  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY --location YOUR_LOCATION
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY
 
 Options:
   --api-key KEY          Your Taolie API key (required)
-  --location LOCATION    Your geographic location (e.g., "US", "EU", "Asia") (required)
+  --location LOCATION    Your geographic location (auto-detected from IP if not provided)
   --public-ip IP         Your public IP address (auto-detected if not provided)
   --ssh-port PORT        SSH port (default: 2222)
   --rental-port-1 PORT   Rental port 1 (default: 8888)
@@ -96,20 +96,20 @@ Options:
   --help                 Show this help message
 
 Examples:
-  # Basic installation with API key and location
-  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --location US
+  # Basic installation with API key (location auto-detected)
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123
 
   # Marketplace mode (for VM rentals)
-  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --location US --marketplace
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --marketplace
 
   # With custom external/internal port mapping
-  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --location US --external-port 3030 --internal-port 3030
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --external-port 3030 --internal-port 3030
 
-  # Custom ports and IP
-  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --location US --public-ip 1.2.3.4 --ssh-port 2223
+  # Custom ports, IP, and location
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --public-ip 1.2.3.4 --ssh-port 2223 --location US
 
   # CPU-only mode
-  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --location US --cpu-only
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --cpu-only
 
 EOF
     exit 0
@@ -196,21 +196,11 @@ if [ -z "$API_KEY" ]; then
     echo ""
     echo "Get your API key from: https://taolie-ai.vercel.app/my-gpu"
     echo ""
-    echo "Usage: curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY --location YOUR_LOCATION"
+    echo "Usage: curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY"
     exit 1
 fi
 
-# Prompt for location if not provided
-if [ -z "$LOCATION" ]; then
-    print_warning "Location is required for registration"
-    echo ""
-    echo "Please enter your geographic location (e.g., US, EU, Asia, Canada, etc.):"
-    read -p "Location: " LOCATION < /dev/tty
-    if [ -z "$LOCATION" ]; then
-        print_error "Location cannot be empty!"
-        exit 1
-    fi
-fi
+# Auto-detect location from IP if not provided (will be done after IP detection)
 
 # Validate port consistency
 if [ -n "$EXTERNAL_PORT" ] && [ -z "$INTERNAL_PORT" ]; then
@@ -391,13 +381,35 @@ else
     print_info "Using provided public IP: $PUBLIC_IP"
 fi
 
-# Confirm IP with user
-echo ""
-print_warning "Please confirm your public IP address: $PUBLIC_IP"
-read -p "Is this correct? (y/n) " -n 1 -r < /dev/tty
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    read -p "Enter your public IP address: " PUBLIC_IP < /dev/tty
+# Auto-detect location from IP if not provided
+if [ -z "$LOCATION" ]; then
+    print_info "Auto-detecting location from IP address..."
+    # Try multiple geolocation APIs
+    LOCATION=$(curl -s "https://ipapi.co/${PUBLIC_IP}/country_code/" 2>/dev/null)
+    if [ -z "$LOCATION" ] || [ "$LOCATION" = "null" ]; then
+        LOCATION=$(curl -s "http://ip-api.com/json/${PUBLIC_IP}" | grep -o '"countryCode":"[^"]*"' | cut -d'"' -f4 2>/dev/null)
+    fi
+    if [ -z "$LOCATION" ] || [ "$LOCATION" = "null" ]; then
+        # Fallback: try to get country name and map to common codes
+        COUNTRY=$(curl -s "http://ip-api.com/json/${PUBLIC_IP}" | grep -o '"country":"[^"]*"' | cut -d'"' -f4 2>/dev/null)
+        case "$COUNTRY" in
+            *"United States"*) LOCATION="US" ;;
+            *"United Kingdom"*) LOCATION="UK" ;;
+            *"Germany"*|*"France"*|*"Italy"*|*"Spain"*|*"Netherlands"*|*"Belgium"*|*"Austria"*|*"Switzerland"*|*"Sweden"*|*"Norway"*|*"Denmark"*|*"Finland"*|*"Poland"*|*"Portugal"*) LOCATION="EU" ;;
+            *"China"*|*"Japan"*|*"South Korea"*|*"Singapore"*|*"India"*|*"Thailand"*|*"Malaysia"*|*"Indonesia"*|*"Philippines"*|*"Vietnam"*) LOCATION="Asia" ;;
+            *"Canada"*) LOCATION="CA" ;;
+            *"Australia"*|*"New Zealand"*) LOCATION="AU" ;;
+            *) LOCATION="Unknown" ;;
+        esac
+    fi
+    if [ -z "$LOCATION" ] || [ "$LOCATION" = "null" ] || [ "$LOCATION" = "Unknown" ]; then
+        print_warning "Could not auto-detect location, using 'Unknown'"
+        LOCATION="Unknown"
+    else
+        print_success "Auto-detected location: $LOCATION"
+    fi
+else
+    print_info "Using provided location: $LOCATION"
 fi
 
 # Configure firewall
@@ -437,12 +449,18 @@ mkdir -p "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 print_success "Directory created"
 
+# Get hostname and machine username
+HOSTNAME=$(hostname)
+MACHINE_USERNAME=$(whoami)
+
 # Create config.yaml
 print_info "Generating configuration file..."
 cat > config.yaml << EOF
 agent:
   id: ""
   api_key: "$API_KEY"
+  hostname: "$HOSTNAME"
+  machine_username: "$MACHINE_USERNAME"
   resource_type: "$([ "$CPU_ONLY" = true ] && echo "cpu" || echo "gpu")"
   location: "$LOCATION"$([ "$MARKETPLACE" = true ] && echo "
   marketplace: true" || echo "")
@@ -636,8 +654,10 @@ ${GREEN}✓ Taolie Host Agent has been successfully installed!${NC}
 
 ${BLUE}Configuration Summary:${NC}
   Installation Directory: $INSTALL_DIR
+  Hostname:              $HOSTNAME
+  Machine Username:      $MACHINE_USERNAME
   Public IP:             $PUBLIC_IP
-  Location:              $LOCATION
+  Location:              $LOCATION (auto-detected)
   SSH Port:              $SSH_PORT
   Rental Ports:          $RENTAL_PORT_1, $RENTAL_PORT_2, $RENTAL_PORT_3$([ -n "$EXTERNAL_PORT" ] && echo "
   External Port:         $EXTERNAL_PORT -> $INTERNAL_PORT" || echo "")
