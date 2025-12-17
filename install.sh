@@ -6,16 +6,17 @@
 # This script automates the installation of the Taolie Host Agent
 # 
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY --location YOUR_LOCATION
+#   curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY --ssh-port PORT --rental-port-1 PORT --rental-port-2 PORT --rental-port-3 PORT
 #
 # Options:
 #   --api-key KEY          Your Taolie API key (required)
+#   --ssh-port PORT        SSH port (required)
+#   --rental-port-1 PORT   Rental port 1 (required)
+#   --rental-port-2 PORT   Rental port 2 (required)
+#   --rental-port-3 PORT   Rental port 3 (required)
+#   --rental-port-N PORT   Additional rental ports (optional, e.g., --rental-port-4, --rental-port-5)
 #   --location LOCATION    Your geographic location (auto-detected if not provided)
 #   --public-ip IP         Your public IP address (auto-detected if not provided)
-#   --ssh-port PORT        SSH port (default: 2222)
-#   --rental-port-1 PORT   Rental port 1 (default: 8888)
-#   --rental-port-2 PORT   Rental port 2 (default: 9999)
-#   --rental-port-3 PORT   Rental port 3 (default: 7777)
 #   --external-port PORT   External port for rental containers (optional)
 #   --internal-port PORT   Internal port for rental containers (optional)
 #   --db-password PASS     PostgreSQL password (default: db_pass)
@@ -32,15 +33,15 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+GRAY='\033[0;90m'
 NC='\033[0m' # No Color
 
 # Default values
 API_KEY=""
 PUBLIC_IP=""
-SSH_PORT=2222
-RENTAL_PORT_1=8888
-RENTAL_PORT_2=9999
-RENTAL_PORT_3=7777
+SSH_PORT=""
+RENTAL_PORTS=()  # Array to store rental ports
 EXTERNAL_PORT=""
 INTERNAL_PORT=""
 DB_PASSWORD="db_pass"
@@ -84,10 +85,11 @@ Options:
   --api-key KEY          Your Taolie API key (required)
   --location LOCATION    Your geographic location (auto-detected from IP if not provided)
   --public-ip IP         Your public IP address (auto-detected if not provided)
-  --ssh-port PORT        SSH port (default: 2222)
-  --rental-port-1 PORT   Rental port 1 (default: 8888)
-  --rental-port-2 PORT   Rental port 2 (default: 9999)
-  --rental-port-3 PORT   Rental port 3 (default: 7777)
+  --ssh-port PORT        SSH port (required)
+  --rental-port-1 PORT   Rental port 1 (required)
+  --rental-port-2 PORT   Rental port 2 (required)
+  --rental-port-3 PORT   Rental port 3 (required)
+  --rental-port-N PORT   Additional rental ports (optional, e.g., --rental-port-4, --rental-port-5)
   --external-port PORT   External port for rental containers (optional)
   --internal-port PORT   Internal port for rental containers (optional, requires --external-port)
   --db-password PASS     PostgreSQL password (default: db_pass)
@@ -96,20 +98,51 @@ Options:
   --help                 Show this help message
 
 Examples:
-  # Basic installation with API key (location auto-detected)
-  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123
+  # Basic installation with required ports (location auto-detected)
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
+    --api-key abc123 \
+    --ssh-port 2222 \
+    --rental-port-1 8888 \
+    --rental-port-2 9999 \
+    --rental-port-3 7777
+
+  # With additional rental ports
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
+    --api-key abc123 \
+    --ssh-port 2222 \
+    --rental-port-1 8888 \
+    --rental-port-2 9999 \
+    --rental-port-3 7777 \
+    --rental-port-4 6666 \
+    --rental-port-5 5555
 
   # Marketplace mode (for VM rentals)
-  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --marketplace
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
+    --api-key abc123 \
+    --ssh-port 2222 \
+    --rental-port-1 8888 \
+    --rental-port-2 9999 \
+    --rental-port-3 7777 \
+    --marketplace
 
   # With custom external/internal port mapping
-  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --external-port 3030 --internal-port 3030
-
-  # Custom ports, IP, and location
-  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --public-ip 1.2.3.4 --ssh-port 2223 --location US
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
+    --api-key abc123 \
+    --ssh-port 2222 \
+    --rental-port-1 8888 \
+    --rental-port-2 9999 \
+    --rental-port-3 7777 \
+    --external-port 3030 \
+    --internal-port 3030
 
   # CPU-only mode
-  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key abc123 --cpu-only
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
+    --api-key abc123 \
+    --ssh-port 2222 \
+    --rental-port-1 8888 \
+    --rental-port-2 9999 \
+    --rental-port-3 7777 \
+    --cpu-only
 
 EOF
     exit 0
@@ -130,16 +163,10 @@ while [[ $# -gt 0 ]]; do
             SSH_PORT="$2"
             shift 2
             ;;
-        --rental-port-1)
-            RENTAL_PORT_1="$2"
-            shift 2
-            ;;
-        --rental-port-2)
-            RENTAL_PORT_2="$2"
-            shift 2
-            ;;
-        --rental-port-3)
-            RENTAL_PORT_3="$2"
+        --rental-port-*)
+            # Handle dynamic rental ports (--rental-port-1, --rental-port-2, etc.)
+            PORT_NUM=$(echo "$1" | sed 's/--rental-port-//')
+            RENTAL_PORTS+=("$2")
             shift 2
             ;;
         --db-password)
@@ -196,7 +223,28 @@ if [ -z "$API_KEY" ]; then
     echo ""
     echo "Get your API key from: https://taolie-ai.vercel.app/my-gpu"
     echo ""
-    echo "Usage: curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY"
+    echo "Usage: curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY --ssh-port PORT --rental-port-1 PORT --rental-port-2 PORT --rental-port-3 PORT"
+    exit 1
+fi
+
+# Validate required ports
+if [ -z "$SSH_PORT" ]; then
+    print_error "SSH port is required!"
+    echo ""
+    echo "Please specify SSH port with --ssh-port option"
+    echo "Example: --ssh-port 2222"
+    exit 1
+fi
+
+if [ ${#RENTAL_PORTS[@]} -lt 3 ]; then
+    print_error "At least 3 rental ports are required!"
+    echo ""
+    echo "Please specify at least 3 rental ports:"
+    echo "  --rental-port-1 PORT"
+    echo "  --rental-port-2 PORT"
+    echo "  --rental-port-3 PORT"
+    echo ""
+    echo "You can add more rental ports: --rental-port-4 PORT, --rental-port-5 PORT, etc."
     exit 1
 fi
 
@@ -417,15 +465,18 @@ print_info "Configuring firewall rules..."
 if command -v ufw &> /dev/null; then
     print_info "Opening required ports in UFW..."
     sudo ufw allow $SSH_PORT/tcp &> /dev/null || true
-    sudo ufw allow $RENTAL_PORT_1/tcp &> /dev/null || true
-    sudo ufw allow $RENTAL_PORT_2/tcp &> /dev/null || true
-    sudo ufw allow $RENTAL_PORT_3/tcp &> /dev/null || true
+    for port in "${RENTAL_PORTS[@]}"; do
+        sudo ufw allow $port/tcp &> /dev/null || true
+    done
     if [ -n "$EXTERNAL_PORT" ]; then
         sudo ufw allow $EXTERNAL_PORT/tcp &> /dev/null || true
     fi
     print_success "Firewall rules configured"
 else
-    PORTS_LIST="$SSH_PORT, $RENTAL_PORT_1, $RENTAL_PORT_2, $RENTAL_PORT_3"
+    PORTS_LIST="$SSH_PORT"
+    for port in "${RENTAL_PORTS[@]}"; do
+        PORTS_LIST="$PORTS_LIST, $port"
+    done
     if [ -n "$EXTERNAL_PORT" ]; then
         PORTS_LIST="$PORTS_LIST, $EXTERNAL_PORT"
     fi
@@ -434,12 +485,136 @@ fi
 
 print_info "Port configuration:"
 echo "  SSH Port:       $SSH_PORT"
-echo "  Rental Port 1:  $RENTAL_PORT_1"
-echo "  Rental Port 2:  $RENTAL_PORT_2"
-echo "  Rental Port 3:  $RENTAL_PORT_3"
+for i in "${!RENTAL_PORTS[@]}"; do
+    echo "  Rental Port $((i+1)):  ${RENTAL_PORTS[$i]}"
+done
 if [ -n "$EXTERNAL_PORT" ]; then
     echo "  External Port:  $EXTERNAL_PORT -> Internal Port: $INTERNAL_PORT"
 fi
+
+# Port checking function
+check_port_open() {
+    local port=$1
+    local port_name=$2
+    local port_type=$3  # "required" or "optional"
+    
+    # Display port check with nice formatting
+    printf "  ${BLUE}→${NC} Checking ${CYAN}%s${NC} (port ${YELLOW}%s${NC})" "$port_name" "$port"
+    if [ "$port_type" = "optional" ]; then
+        printf " ${GRAY}[Optional]${NC}"
+    fi
+    printf " ... "
+    
+    # Use "me" as host to auto-detect requester IP
+    local response=$(curl -s --max-time 10 "https://portchecker.io/api/me/$port" 2>/dev/null)
+    
+    if [ "$response" = "True" ]; then
+        echo -e "${GREEN}✓ OPEN${NC}"
+        return 0
+    elif [ "$response" = "False" ]; then
+        echo -e "${RED}✗ CLOSED${NC}"
+        return 1
+    else
+        echo -e "${YELLOW}⚠ UNKNOWN${NC}"
+        print_warning "    Could not verify port status (API response: ${response:-timeout})"
+        print_warning "    Proceeding anyway, but please ensure the port is open"
+        return 0  # Don't block on API errors, just warn
+    fi
+}
+
+# Check all ports before proceeding
+print_header "Step 2.5: Port Availability Check"
+
+echo ""
+print_info "Verifying port accessibility from external network..."
+echo ""
+
+PORT_CHECK_FAILED=false
+CLOSED_PORTS=()
+
+# Check SSH port (required)
+if ! check_port_open "$SSH_PORT" "SSH Port" "required"; then
+    PORT_CHECK_FAILED=true
+    CLOSED_PORTS+=("SSH Port: $SSH_PORT")
+fi
+
+# Check all rental ports (required)
+for i in "${!RENTAL_PORTS[@]}"; do
+    if ! check_port_open "${RENTAL_PORTS[$i]}" "Rental Port $((i+1))" "required"; then
+        PORT_CHECK_FAILED=true
+        CLOSED_PORTS+=("Rental Port $((i+1)): ${RENTAL_PORTS[$i]}")
+    fi
+done
+
+# Check external port if provided (optional, skip internal port as it's not strict)
+if [ -n "$EXTERNAL_PORT" ]; then
+    if ! check_port_open "$EXTERNAL_PORT" "External Port" "optional"; then
+        PORT_CHECK_FAILED=true
+        CLOSED_PORTS+=("External Port: $EXTERNAL_PORT")
+    fi
+fi
+
+echo ""
+
+# If any port check failed, exit with error
+if [ "$PORT_CHECK_FAILED" = true ]; then
+    echo ""
+    print_error "Port verification failed!"
+    echo ""
+    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}⚠  The following ports are not accessible from the external network:${NC}"
+    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    for closed_port in "${CLOSED_PORTS[@]}"; do
+        echo -e "  ${RED}✗${NC} ${closed_port}"
+    done
+    echo ""
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}📋 Required Ports Summary:${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "  ${CYAN}SSH Port:${NC}        ${YELLOW}$SSH_PORT${NC}"
+    for i in "${!RENTAL_PORTS[@]}"; do
+        echo -e "  ${CYAN}Rental Port $((i+1)):${NC}   ${YELLOW}${RENTAL_PORTS[$i]}${NC}"
+    done
+    if [ -n "$EXTERNAL_PORT" ]; then
+        echo -e "  ${CYAN}External Port:${NC}    ${YELLOW}$EXTERNAL_PORT${NC} ${GRAY}(Optional)${NC}"
+    fi
+    echo ""
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}🔧 Troubleshooting Steps:${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "  ${GREEN}1.${NC} ${CYAN}Router Configuration:${NC}"
+    echo -e "     • Log into your router admin panel"
+    echo -e "     • Navigate to Port Forwarding / Virtual Server settings"
+    echo -e "     • Forward the required ports to this machine's local IP"
+    echo ""
+    echo -e "  ${GREEN}2.${NC} ${CYAN}Cloud Provider (AWS/GCP/Azure):${NC}"
+    echo -e "     • Update Security Groups / Firewall Rules"
+    echo -e "     • Allow inbound traffic on the required ports"
+    echo ""
+    echo -e "  ${GREEN}3.${NC} ${CYAN}Local Firewall (UFW/iptables):${NC}"
+    echo -e "     • Ensure UFW allows the ports: ${YELLOW}sudo ufw allow $SSH_PORT/tcp${NC}"
+    for port in "${RENTAL_PORTS[@]}"; do
+        echo -e "     • ${YELLOW}sudo ufw allow $port/tcp${NC}"
+    done
+    echo ""
+    echo -e "  ${GREEN}4.${NC} ${CYAN}Verify Port Status:${NC}"
+    echo -e "     • Check ports manually at: ${BLUE}https://portchecker.io${NC}"
+    echo -e "     • Test from external network: ${BLUE}telnet $PUBLIC_IP $SSH_PORT${NC}"
+    echo ""
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    print_error "Installation cannot proceed until all required ports are accessible."
+    echo ""
+    exit 1
+fi
+
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+print_success "All ports are verified and accessible from external network"
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
 
 print_header "Step 3: Installation Directory Setup"
 
@@ -469,9 +644,9 @@ network:
   public_ip: "$PUBLIC_IP"
   ports:
     ssh: $SSH_PORT
-    rental_port_1: $RENTAL_PORT_1
-    rental_port_2: $RENTAL_PORT_2
-    rental_port_3: $RENTAL_PORT_3$([ -n "$EXTERNAL_PORT" ] && echo "
+$(for i in "${!RENTAL_PORTS[@]}"; do
+  echo "    rental_port_$((i+1)): ${RENTAL_PORTS[$i]}"
+done)$([ -n "$EXTERNAL_PORT" ] && echo "
     external_port: $EXTERNAL_PORT
     internal_port: $INTERNAL_PORT" || echo "")
 
@@ -659,7 +834,7 @@ ${BLUE}Configuration Summary:${NC}
   Public IP:             $PUBLIC_IP
   Location:              $LOCATION (auto-detected)
   SSH Port:              $SSH_PORT
-  Rental Ports:          $RENTAL_PORT_1, $RENTAL_PORT_2, $RENTAL_PORT_3$([ -n "$EXTERNAL_PORT" ] && echo "
+  Rental Ports:          $(IFS=', '; echo "${RENTAL_PORTS[*]}")$([ -n "$EXTERNAL_PORT" ] && echo "
   External Port:         $EXTERNAL_PORT -> $INTERNAL_PORT" || echo "")
   Resource Type:         $([ "$CPU_ONLY" = true ] && echo "CPU" || echo "GPU")
   Mode:                  $([ "$CPU_ONLY" = true ] && echo "CPU-only" || echo "GPU-enabled")$([ "$MARKETPLACE" = true ] && echo "
@@ -678,7 +853,7 @@ ${BLUE}Useful Commands:${NC}
   Remove agent:     docker stop taolie-host-agent && docker rm taolie-host-agent
 
 ${YELLOW}⚠ Important Reminders:${NC}
-  • Ensure ports $SSH_PORT, $RENTAL_PORT_1, $RENTAL_PORT_2, $RENTAL_PORT_3$([ -n "$EXTERNAL_PORT" ] && echo ", $EXTERNAL_PORT" || echo "") are forwarded in your router
+  • Ensure ports $SSH_PORT$(for port in "${RENTAL_PORTS[@]}"; do echo ", $port"; done)$([ -n "$EXTERNAL_PORT" ] && echo ", $EXTERNAL_PORT" || echo "") are forwarded in your router
   • If using cloud provider, update security groups to allow these ports
   • Keep your API key secure and never share it
 
