@@ -497,6 +497,7 @@ check_port_open() {
     local port=$1
     local port_name=$2
     local port_type=$3  # "required" or "optional"
+    local nc_pid=""
     
     # Display port check with nice formatting
     printf "  ${BLUE}→${NC} Checking ${CYAN}%s${NC} (port ${YELLOW}%s${NC})" "$port_name" "$port"
@@ -505,9 +506,41 @@ check_port_open() {
     fi
     printf " ... "
     
+    # Netcat should already be installed at this point (checked before port checks)
+    # But verify it's available just in case
+    if ! command -v nc &> /dev/null; then
+        echo -e "${RED}✗ FAILED${NC}"
+        print_error "    netcat (nc) not found - port check cannot proceed"
+        return 1
+    fi
+    
+    # Start netcat listener in background
+    # This will listen on the port and send "hello port is open" when a connection is made
+    echo "hello port is open" | nc -l -p $port >/dev/null 2>&1 &
+    nc_pid=$!
+    
+    # Wait a moment for netcat to start listening
+    sleep 2
+    
+    # Verify netcat is still running (if it died immediately, port might be in use)
+    if ! kill -0 $nc_pid 2>/dev/null; then
+        # Netcat died - port might be in use, but continue with portchecker anyway
+        nc_pid=""
+    fi
+    
     # Use "me" as host to auto-detect requester IP
     local response=$(curl -s --max-time 10 "https://portchecker.io/api/me/$port" 2>/dev/null)
     
+    # Clean up netcat process if we started it
+    if [ -n "$nc_pid" ] && kill -0 $nc_pid 2>/dev/null; then
+        kill $nc_pid 2>/dev/null || true
+        wait $nc_pid 2>/dev/null || true
+    fi
+    
+    # Also try to kill any remaining netcat processes on this port (safety cleanup)
+    pkill -f "nc -l -p $port" 2>/dev/null || true
+    
+    # Evaluate response
     if [ "$response" = "True" ]; then
         echo -e "${GREEN}✓ OPEN${NC}"
         return 0
@@ -527,6 +560,28 @@ print_header "Step 2.5: Port Availability Check"
 
 echo ""
 print_info "Verifying port accessibility from external network..."
+
+# Ensure netcat is installed before checking ports
+if ! command -v nc &> /dev/null; then
+    echo ""
+    print_info "Installing netcat (required for port checking)..."
+    if command -v sudo &> /dev/null; then
+        sudo apt-get update -qq >/dev/null 2>&1
+        sudo apt-get install -y netcat-openbsd >/dev/null 2>&1
+    else
+        # Try without sudo (in case we're already root)
+        apt-get update -qq >/dev/null 2>&1
+        apt-get install -y netcat-openbsd >/dev/null 2>&1
+    fi
+    
+    # Verify installation
+    if ! command -v nc &> /dev/null; then
+        print_error "Failed to install netcat. Port checking cannot proceed."
+        exit 1
+    fi
+    print_success "netcat installed successfully"
+fi
+
 echo ""
 
 PORT_CHECK_FAILED=false
