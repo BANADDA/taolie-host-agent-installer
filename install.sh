@@ -914,7 +914,7 @@ ${YELLOW}⚠ Important Reminders:${NC}
 
 ${BLUE}Need Help?${NC}
   Documentation: https://taolie-ai.vercel.app/my-gpu
-  Support: https://help.manus.im
+  Support: https://help.taolie-ai.vercel.app
 
 EOF
 
