@@ -418,7 +418,7 @@ print_header "Step 2: Network Configuration"
 # Auto-detect public IP if not provided
 if [ -z "$PUBLIC_IP" ]; then
     print_info "Auto-detecting public IP address..."
-    PUBLIC_IP=$(curl -s ifconfig.me)
+    PUBLIC_IP=$(curl -4 -s ifconfig.me)
     if [ -z "$PUBLIC_IP" ]; then
         print_error "Failed to auto-detect public IP"
         echo "Please specify your public IP with --public-ip option"
