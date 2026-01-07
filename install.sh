@@ -22,6 +22,7 @@
 #   --db-password PASS     PostgreSQL password (default: db_pass)
 #   --cpu-only             Install in CPU-only mode (default: auto-detect GPU)
 #   --marketplace          Enable marketplace mode (for VM rentals, auto-setup VM requirements)
+#   --label KEY=VALUE      Add Docker label to container (can be specified multiple times)
 #   --help                 Show this help message
 #
 #############################################################################
@@ -50,6 +51,7 @@ MARKETPLACE=false
 USE_GPUS_FLAG=false
 INSTALL_DIR="$HOME/taolie-host-agent"
 LOCATION=""
+DOCKER_LABELS=()  # Array to store Docker labels
 
 # Helper functions
 print_info() {
@@ -95,6 +97,7 @@ Options:
   --db-password PASS     PostgreSQL password (default: db_pass)
   --cpu-only             Install in CPU-only mode (default: auto-detect GPU)
   --marketplace          Enable marketplace mode (for VM rentals, auto-setup VM requirements)
+  --label KEY=VALUE      Add Docker label to container (can be specified multiple times)
   --help                 Show this help message
 
 Examples:
@@ -144,6 +147,15 @@ Examples:
     --rental-port-3 7777 \
     --cpu-only
 
+  # With Docker labels (e.g., for Watchtower)
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
+    --api-key abc123 \
+    --ssh-port 2222 \
+    --rental-port-1 8888 \
+    --rental-port-2 9999 \
+    --rental-port-3 7777 \
+    --label "com.centurylinklabs.watchtower.enable=true"
+
 EOF
     exit 0
 }
@@ -192,6 +204,10 @@ while [[ $# -gt 0 ]]; do
         --marketplace)
             MARKETPLACE=true
             shift
+            ;;
+        --label)
+            DOCKER_LABELS+=("$2")
+            shift 2
             ;;
         --help)
             show_help
@@ -791,50 +807,57 @@ print_header "Step 5: Deploying Taolie Host Agent"
 # Run Taolie Host Agent
 print_info "Starting Taolie Host Agent..."
 
+# Build docker run command with labels
+build_docker_cmd() {
+    local cmd_args=(
+        "docker" "run" "-d"
+        "--name" "taolie-host-agent"
+        "--restart" "unless-stopped"
+    )
+    
+    # Add GPU-specific flags if not CPU-only
+    if [ "$1" != "cpu" ]; then
+        if [ "${USE_GPUS_FLAG:-false}" = true ]; then
+            cmd_args+=("--gpus" "all")
+        else
+            cmd_args+=("--runtime" "nvidia")
+        fi
+        cmd_args+=(
+            "-e" "NVIDIA_VISIBLE_DEVICES=all"
+            "-e" "NVIDIA_DRIVER_CAPABILITIES=all"
+        )
+    fi
+    
+    # Add common flags
+    cmd_args+=(
+        "--privileged"
+        "--network" "taolie-network"
+    )
+    
+    # Add labels
+    for label in "${DOCKER_LABELS[@]}"; do
+        cmd_args+=("--label" "$label")
+    done
+    
+    # Add volumes
+    cmd_args+=(
+        "-v" "/var/run/docker.sock:/var/run/docker.sock"
+        "-v" "/usr/local/bin:/usr/local/bin"
+        "-v" "$(pwd)/config.yaml:/etc/taolie-host-agent/config.yaml:ro"
+        "-v" "taolie_agent_logs:/var/log/taolie-host-agent"
+        "ghcr.io/banadda/host-agent:latest"
+    )
+    
+    # Execute the command
+    "${cmd_args[@]}"
+}
+
 if [ "$CPU_ONLY" = true ]; then
     print_info "Deploying in CPU-only mode..."
-    docker run -d \
-        --name taolie-host-agent \
-        --restart unless-stopped \
-        --privileged \
-        --network taolie-network \
-        -v /var/run/docker.sock:/var/run/docker.sock \
-        -v /usr/local/bin:/usr/local/bin \
-        -v "$(pwd)/config.yaml:/etc/taolie-host-agent/config.yaml:ro" \
-        -v taolie_agent_logs:/var/log/taolie-host-agent \
-        ghcr.io/banadda/host-agent:latest
+    build_docker_cmd "cpu"
 else
     print_info "Deploying with GPU support..."
-    # Use --gpus flag if USE_GPUS_FLAG is set, otherwise use --runtime nvidia
-    if [ "${USE_GPUS_FLAG:-false}" = true ]; then
-        docker run -d \
-            --name taolie-host-agent \
-            --restart unless-stopped \
-            --gpus all \
-            --privileged \
-            --network taolie-network \
-            -e NVIDIA_VISIBLE_DEVICES=all \
-            -e NVIDIA_DRIVER_CAPABILITIES=all \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v /usr/local/bin:/usr/local/bin \
-            -v "$(pwd)/config.yaml:/etc/taolie-host-agent/config.yaml:ro" \
-            -v taolie_agent_logs:/var/log/taolie-host-agent \
-            ghcr.io/banadda/host-agent:latest
-    else
-        docker run -d \
-            --name taolie-host-agent \
-            --restart unless-stopped \
-            --runtime nvidia \
-            --privileged \
-            --network taolie-network \
-            -e NVIDIA_VISIBLE_DEVICES=all \
-            -e NVIDIA_DRIVER_CAPABILITIES=all \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v /usr/local/bin:/usr/local/bin \
-            -v "$(pwd)/config.yaml:/etc/taolie-host-agent/config.yaml:ro" \
-            -v taolie_agent_logs:/var/log/taolie-host-agent \
-            ghcr.io/banadda/host-agent:latest
-    fi
+    build_docker_cmd "gpu"
 fi
 
 print_success "Taolie Host Agent container started"
