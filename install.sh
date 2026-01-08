@@ -10,7 +10,8 @@
 #
 # Options:
 #   --api-key KEY          Your Taolie API key (required)
-#   --ssh-port PORT        SSH port (required)
+#   --ssh-port PORT        SSH port for agent (required)
+#   --host-ssh-port PORT   Host SSH port for SSH access verification (required)
 #   --rental-port-1 PORT   Rental port 1 (required)
 #   --rental-port-2 PORT   Rental port 2 (required)
 #   --rental-port-3 PORT   Rental port 3 (required)
@@ -42,6 +43,7 @@ NC='\033[0m' # No Color
 API_KEY=""
 PUBLIC_IP=""
 SSH_PORT=""
+HOST_SSH_PORT=""  # Host SSH port (different from agent SSH port)
 RENTAL_PORTS=()  # Array to store rental ports
 EXTERNAL_PORT=""
 INTERNAL_PORT=""
@@ -87,7 +89,8 @@ Options:
   --api-key KEY          Your Taolie API key (required)
   --location LOCATION    Your geographic location (auto-detected from IP if not provided)
   --public-ip IP         Your public IP address (auto-detected if not provided)
-  --ssh-port PORT        SSH port (required)
+  --ssh-port PORT        SSH port for agent (required)
+  --host-ssh-port PORT   Host SSH port for SSH access verification (required)
   --rental-port-1 PORT   Rental port 1 (required)
   --rental-port-2 PORT   Rental port 2 (required)
   --rental-port-3 PORT   Rental port 3 (required)
@@ -105,6 +108,7 @@ Examples:
   curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
     --api-key abc123 \
     --ssh-port 2222 \
+    --host-ssh-port 3030 \
     --rental-port-1 8888 \
     --rental-port-2 9999 \
     --rental-port-3 7777
@@ -173,6 +177,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --ssh-port)
             SSH_PORT="$2"
+            shift 2
+            ;;
+        --host-ssh-port)
+            HOST_SSH_PORT="$2"
             shift 2
             ;;
         --rental-port-*)
@@ -249,6 +257,14 @@ if [ -z "$SSH_PORT" ]; then
     echo ""
     echo "Please specify SSH port with --ssh-port option"
     echo "Example: --ssh-port 2222"
+    exit 1
+fi
+
+if [ -z "$HOST_SSH_PORT" ]; then
+    print_error "Host SSH port is required!"
+    echo ""
+    echo "Please specify host SSH port with --host-ssh-port option"
+    echo "Example: --host-ssh-port 3030"
     exit 1
 fi
 
@@ -481,6 +497,7 @@ print_info "Configuring firewall rules..."
 if command -v ufw &> /dev/null; then
     print_info "Opening required ports in UFW..."
     sudo ufw allow $SSH_PORT/tcp &> /dev/null || true
+    sudo ufw allow $HOST_SSH_PORT/tcp &> /dev/null || true
     for port in "${RENTAL_PORTS[@]}"; do
         sudo ufw allow $port/tcp &> /dev/null || true
     done
@@ -501,6 +518,7 @@ fi
 
 print_info "Port configuration:"
 echo "  SSH Port:       $SSH_PORT"
+echo "  Host SSH Port: $HOST_SSH_PORT"
 for i in "${!RENTAL_PORTS[@]}"; do
     echo "  Rental Port $((i+1)):  ${RENTAL_PORTS[$i]}"
 done
@@ -571,6 +589,125 @@ check_port_open() {
     fi
 }
 
+# SSH verification function
+check_ssh_access() {
+    local ip=$1
+    local port=$2
+    local username=$3
+    local port_name=$4
+    
+    # Display SSH check with nice formatting
+    printf "  ${BLUE}→${NC} Checking ${CYAN}%s${NC} (SSH on port ${YELLOW}%s${NC})" "$port_name" "$port"
+    printf " ... "
+    
+    # Check if Python 3 is available
+    if ! command -v python3 &> /dev/null; then
+        echo -e "${RED}✗ FAILED${NC}"
+        print_error "    Python 3 not found - SSH check cannot proceed"
+        return 1
+    fi
+    
+    # Check if paramiko is installed, install if not
+    if ! python3 -c "import paramiko" 2>/dev/null; then
+        print_info "    Installing paramiko (required for SSH verification)..."
+        if command -v pip3 &> /dev/null; then
+            pip3 install --quiet paramiko 2>/dev/null || {
+                echo -e "${RED}✗ FAILED${NC}"
+                print_error "    Failed to install paramiko"
+                return 1
+            }
+        else
+            # Try installing pip3 first
+            if command -v sudo &> /dev/null; then
+                sudo apt-get update -qq >/dev/null 2>&1
+                sudo apt-get install -y python3-pip >/dev/null 2>&1
+                sudo pip3 install --quiet paramiko 2>/dev/null || {
+                    echo -e "${RED}✗ FAILED${NC}"
+                    print_error "    Failed to install paramiko"
+                    return 1
+                }
+            else
+                apt-get update -qq >/dev/null 2>&1
+                apt-get install -y python3-pip >/dev/null 2>&1
+                pip3 install --quiet paramiko 2>/dev/null || {
+                    echo -e "${RED}✗ FAILED${NC}"
+                    print_error "    Failed to install paramiko"
+                    return 1
+                }
+            fi
+        fi
+    fi
+    
+    # Create temporary Python script for SSH verification
+    local ssh_check_script=$(mktemp)
+    cat > "$ssh_check_script" << 'PYTHON_EOF'
+import paramiko
+import socket
+import sys
+
+def test_ssh_access(ip, port, username):
+    client = paramiko.SSHClient()
+    # This auto-accepts the server's host key (needed for first-time connections)
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    
+    try:
+        # We don't provide a password; we are testing if the service responds
+        client.connect(ip, port=port, username=username, password="wrong_password_on_purpose", timeout=10)
+        
+    except paramiko.AuthenticationException:
+        # Authentication failed means SSH is active and responding
+        print("SUCCESS")
+        return 0
+    
+    except socket.timeout:
+        print("FAILURE: Connection timed out. The port is likely closed or firewalled.")
+        return 1
+    
+    except paramiko.SSHException as e:
+        # SSH is responding, but encountered a protocol error
+        print("SUCCESS")
+        return 0
+    
+    except Exception as e:
+        print(f"FAILURE: Could not connect: {e}")
+        return 1
+    
+    finally:
+        client.close()
+
+if __name__ == "__main__":
+    if len(sys.argv) != 4:
+        print("FAILURE: Usage: python3 script.py <ip> <port> <username>")
+        sys.exit(1)
+    
+    ip = sys.argv[1]
+    port = int(sys.argv[2])
+    username = sys.argv[3]
+    
+    result = test_ssh_access(ip, port, username)
+    sys.exit(result)
+PYTHON_EOF
+    
+    # Run the SSH check script
+    local result=$(python3 "$ssh_check_script" "$ip" "$port" "$username" 2>&1)
+    local exit_code=$?
+    
+    # Clean up temporary script
+    rm -f "$ssh_check_script"
+    
+    # Evaluate result
+    if [ $exit_code -eq 0 ] && echo "$result" | grep -q "SUCCESS"; then
+        echo -e "${GREEN}✓ SSH ACTIVE${NC}"
+        return 0
+    else
+        echo -e "${RED}✗ SSH FAILED${NC}"
+        if [ -n "$result" ]; then
+            print_error "    $result"
+        fi
+        return 1
+    fi
+}
+
 # Check all ports before proceeding
 print_header "Step 2.5: Port Availability Check"
 
@@ -609,6 +746,13 @@ if ! check_port_open "$SSH_PORT" "SSH Port" "required"; then
     CLOSED_PORTS+=("SSH Port: $SSH_PORT")
 fi
 
+# Check host SSH port with SSH verification (required)
+MACHINE_USERNAME=$(whoami)
+if ! check_ssh_access "$PUBLIC_IP" "$HOST_SSH_PORT" "$MACHINE_USERNAME" "Host SSH Port"; then
+    PORT_CHECK_FAILED=true
+    CLOSED_PORTS+=("Host SSH Port: $HOST_SSH_PORT (SSH verification failed)")
+fi
+
 # Check all rental ports (required)
 for i in "${!RENTAL_PORTS[@]}"; do
     if ! check_port_open "${RENTAL_PORTS[$i]}" "Rental Port $((i+1))" "required"; then
@@ -645,6 +789,7 @@ if [ "$PORT_CHECK_FAILED" = true ]; then
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     echo -e "  ${CYAN}SSH Port:${NC}        ${YELLOW}$SSH_PORT${NC}"
+    echo -e "  ${CYAN}Host SSH Port:${NC}   ${YELLOW}$HOST_SSH_PORT${NC}"
     for i in "${!RENTAL_PORTS[@]}"; do
         echo -e "  ${CYAN}Rental Port $((i+1)):${NC}   ${YELLOW}${RENTAL_PORTS[$i]}${NC}"
     done
@@ -667,6 +812,7 @@ if [ "$PORT_CHECK_FAILED" = true ]; then
     echo ""
     echo -e "  ${GREEN}3.${NC} ${CYAN}Local Firewall (UFW/iptables):${NC}"
     echo -e "     • Ensure UFW allows the ports: ${YELLOW}sudo ufw allow $SSH_PORT/tcp${NC}"
+    echo -e "     • ${YELLOW}sudo ufw allow $HOST_SSH_PORT/tcp${NC}"
     for port in "${RENTAL_PORTS[@]}"; do
         echo -e "     • ${YELLOW}sudo ufw allow $port/tcp${NC}"
     done
@@ -715,6 +861,7 @@ network:
   public_ip: "$PUBLIC_IP"
   ports:
     ssh: $SSH_PORT
+    host_ssh_port: $HOST_SSH_PORT
 $(for i in "${!RENTAL_PORTS[@]}"; do
   echo "    rental_port_$((i+1)): ${RENTAL_PORTS[$i]}"
 done)$([ -n "$EXTERNAL_PORT" ] && echo "
@@ -912,6 +1059,7 @@ ${BLUE}Configuration Summary:${NC}
   Public IP:             $PUBLIC_IP
   Location:              $LOCATION (auto-detected)
   SSH Port:              $SSH_PORT
+  Host SSH Port:         $HOST_SSH_PORT
   Rental Ports:          $(IFS=', '; echo "${RENTAL_PORTS[*]}")$([ -n "$EXTERNAL_PORT" ] && echo "
   External Port:         $EXTERNAL_PORT -> $INTERNAL_PORT" || echo "")
   Resource Type:         $([ "$CPU_ONLY" = true ] && echo "CPU" || echo "GPU")
@@ -931,7 +1079,7 @@ ${BLUE}Useful Commands:${NC}
   Remove agent:     docker stop taolie-host-agent && docker rm taolie-host-agent
 
 ${YELLOW}⚠ Important Reminders:${NC}
-  • Ensure ports $SSH_PORT$(for port in "${RENTAL_PORTS[@]}"; do echo ", $port"; done)$([ -n "$EXTERNAL_PORT" ] && echo ", $EXTERNAL_PORT" || echo "") are forwarded in your router
+  • Ensure ports $SSH_PORT, $HOST_SSH_PORT$(for port in "${RENTAL_PORTS[@]}"; do echo ", $port"; done)$([ -n "$EXTERNAL_PORT" ] && echo ", $EXTERNAL_PORT" || echo "") are forwarded in your router
   • If using cloud provider, update security groups to allow these ports
   • Keep your API key secure and never share it
 
