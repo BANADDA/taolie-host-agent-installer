@@ -556,16 +556,23 @@ check_port_open() {
     fi
 }
 
-# SSH verification function
+# SSH verification function using netcat
 check_ssh_access() {
     local ip=$1
     local port=$2
-    local username=$3
+    local username=$3  # Not used, kept for compatibility
     local port_name=$4
     
     # Display SSH check with nice formatting
     printf "  ${BLUE}→${NC} Checking ${CYAN}%s${NC} (SSH on port ${YELLOW}%s${NC})" "$port_name" "$port"
     printf " ... "
+    
+    # Check if netcat is available (should already be installed for port checking)
+    if ! command -v nc &> /dev/null; then
+        echo -e "${RED}✗ FAILED${NC}"
+        print_error "    netcat (nc) not found - SSH check cannot proceed"
+        return 1
+    fi
     
     # Check if Python 3 is available
     if ! command -v python3 &> /dev/null; then
@@ -574,100 +581,53 @@ check_ssh_access() {
         return 1
     fi
     
-    # Check if paramiko is installed, install if not
-    if ! python3 -c "import paramiko" 2>/dev/null; then
-        print_info "    Installing paramiko (required for SSH verification)..."
-        if command -v pip3 &> /dev/null; then
-            pip3 install --quiet paramiko 2>/dev/null || {
-                echo -e "${RED}✗ FAILED${NC}"
-                print_error "    Failed to install paramiko"
-                return 1
-            }
-        else
-            # Try installing pip3 first
-            if command -v sudo &> /dev/null; then
-                sudo apt-get update -qq >/dev/null 2>&1
-                sudo apt-get install -y python3-pip >/dev/null 2>&1
-                sudo pip3 install --quiet paramiko 2>/dev/null || {
-                    echo -e "${RED}✗ FAILED${NC}"
-                    print_error "    Failed to install paramiko"
-                    return 1
-                }
-            else
-                apt-get update -qq >/dev/null 2>&1
-                apt-get install -y python3-pip >/dev/null 2>&1
-                pip3 install --quiet paramiko 2>/dev/null || {
-                    echo -e "${RED}✗ FAILED${NC}"
-                    print_error "    Failed to install paramiko"
-                    return 1
-                }
-            fi
-        fi
-    fi
-    
-    # Create temporary Python script for SSH verification
+    # Create temporary Python script for SSH verification using netcat
     local ssh_check_script=$(mktemp)
     cat > "$ssh_check_script" << 'PYTHON_EOF'
-import paramiko
-import socket
+import subprocess
 import sys
 
-def test_ssh_access(ip, port, username):
-    client = paramiko.SSHClient()
-    # This auto-accepts the server's host key (needed for first-time connections)
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    
+def test_ssh_access(ip, port):
+    """Simple SSH port test using netcat"""
     try:
-        # We don't provide a password; we are testing if the service responds
-        client.connect(ip, port=port, username=username, password="wrong_password_on_purpose", timeout=10)
-        
-    except paramiko.AuthenticationException:
-        # Authentication failed means SSH is active and responding
-        print("SUCCESS")
-        return 0
-    
-    except socket.timeout:
+        result = subprocess.run(
+            ['nc', '-zv', ip, str(port)],
+            capture_output=True,
+            timeout=10
+        )
+        return 0 if result.returncode == 0 else 1
+    except subprocess.TimeoutExpired:
         print("FAILURE: Connection timed out. The port is likely closed or firewalled.")
         return 1
-    
-    except paramiko.SSHException as e:
-        # SSH is responding, but encountered a protocol error
-        print("SUCCESS")
-        return 0
-    
     except Exception as e:
         print(f"FAILURE: Could not connect: {e}")
         return 1
-    
-    finally:
-        client.close()
 
 if __name__ == "__main__":
-    if len(sys.argv) != 4:
-        print("FAILURE: Usage: python3 script.py <ip> <port> <username>")
+    if len(sys.argv) != 3:
+        print("FAILURE: Usage: python3 script.py <ip> <port>")
         sys.exit(1)
     
     ip = sys.argv[1]
     port = int(sys.argv[2])
-    username = sys.argv[3]
     
-    result = test_ssh_access(ip, port, username)
+    result = test_ssh_access(ip, port)
     sys.exit(result)
 PYTHON_EOF
     
     # Run the SSH check script
-    local result=$(python3 "$ssh_check_script" "$ip" "$port" "$username" 2>&1)
+    local result=$(python3 "$ssh_check_script" "$ip" "$port" 2>&1)
     local exit_code=$?
     
     # Clean up temporary script
     rm -f "$ssh_check_script"
     
     # Evaluate result
-    if [ $exit_code -eq 0 ] && echo "$result" | grep -q "SUCCESS"; then
-        echo -e "${GREEN}✓ SSH ACTIVE${NC}"
+    if [ $exit_code -eq 0 ]; then
+        echo -e "${GREEN}✓ SSH PORT OPEN${NC}"
         return 0
     else
-        echo -e "${RED}✗ SSH FAILED${NC}"
+        echo -e "${RED}✗ SSH PORT CLOSED${NC}"
         if [ -n "$result" ]; then
             print_error "    $result"
         fi
@@ -746,8 +706,11 @@ for port in {3030..3039}; do
             CLOSED_PORTS+=("External Port: $port")
         fi
     else
-        # Check any other port in the range (check but don't fail)
-        check_port_open "$port" "Port $port" "optional" || true
+        # Check any other port in the range (required - all ports must be open)
+        if ! check_port_open "$port" "Port $port" "required"; then
+            PORT_CHECK_FAILED=true
+            CLOSED_PORTS+=("Port $port")
+        fi
     fi
 done
 
