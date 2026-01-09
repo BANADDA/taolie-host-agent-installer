@@ -6,21 +6,20 @@
 # This script automates the installation of the Taolie Host Agent
 # 
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY --ssh-port PORT --rental-port-1 PORT --rental-port-2 PORT --rental-port-3 PORT
+#   curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY --host-ssh-port PORT
 #
 # Options:
 #   --api-key KEY          Your Taolie API key (required)
-#   --ssh-port PORT        SSH port for agent (required)
 #   --host-ssh-port PORT   Host SSH port for SSH access verification (required)
-#   --rental-port-1 PORT   Rental port 1 (required)
-#   --rental-port-2 PORT   Rental port 2 (required)
-#   --rental-port-3 PORT   Rental port 3 (required)
+#   --ssh-port PORT        SSH port for agent (default: 3030)
+#   --rental-port-1 PORT   Rental port 1 (default: 3031)
+#   --rental-port-2 PORT   Rental port 2 (default: 3032)
+#   --rental-port-3 PORT   Rental port 3 (default: 3033)
 #   --rental-port-N PORT   Additional rental ports (optional, e.g., --rental-port-4, --rental-port-5)
 #   --location LOCATION    Your geographic location (auto-detected if not provided)
 #   --public-ip IP         Your public IP address (auto-detected if not provided)
-#   --external-port PORT   External port for rental containers (optional)
-#   --internal-port PORT   Internal port for rental containers (optional)
 #   --db-password PASS     PostgreSQL password (default: db_pass)
+#   Note: External/Internal ports default to 3036 (automatic, no user input required)
 #   --cpu-only             Install in CPU-only mode (default: auto-detect GPU)
 #   --marketplace          Enable marketplace mode (for VM rentals, auto-setup VM requirements)
 #   --label KEY=VALUE      Add Docker label to container (can be specified multiple times)
@@ -42,18 +41,19 @@ NC='\033[0m' # No Color
 # Default values
 API_KEY=""
 PUBLIC_IP=""
-SSH_PORT=""
-HOST_SSH_PORT=""  # Host SSH port (different from agent SSH port)
-RENTAL_PORTS=()  # Array to store rental ports
-EXTERNAL_PORT=""
-INTERNAL_PORT=""
+SSH_PORT=""  # Will default to 3030 if not provided
+HOST_SSH_PORT=""  # Host SSH port (different from agent SSH port) - required
+RENTAL_PORTS=()  # Will default to 3031, 3032, 3033 if not provided
+EXTERNAL_PORT="3036"  # Default external port
+INTERNAL_PORT="3036"  # Default internal port (same as external)
 DB_PASSWORD="db_pass"
 CPU_ONLY=false
 MARKETPLACE=false
 USE_GPUS_FLAG=false
 INSTALL_DIR="$HOME/taolie-host-agent"
 LOCATION=""
-DOCKER_LABELS=()  # Array to store Docker labels
+DOCKER_LABELS=("com.centurylinklabs.watchtower.enable=true")  # Default labels (Watchtower enabled)
+USER_PROVIDED_RENTAL_PORTS=false  # Track if user provided any rental ports
 
 # Helper functions
 print_info() {
@@ -89,14 +89,12 @@ Options:
   --api-key KEY          Your Taolie API key (required)
   --location LOCATION    Your geographic location (auto-detected from IP if not provided)
   --public-ip IP         Your public IP address (auto-detected if not provided)
-  --ssh-port PORT        SSH port for agent (required)
   --host-ssh-port PORT   Host SSH port for SSH access verification (required)
-  --rental-port-1 PORT   Rental port 1 (required)
-  --rental-port-2 PORT   Rental port 2 (required)
-  --rental-port-3 PORT   Rental port 3 (required)
+  --ssh-port PORT        SSH port for agent (default: 3030)
+  --rental-port-1 PORT   Rental port 1 (default: 3031)
+  --rental-port-2 PORT   Rental port 2 (default: 3032)
+  --rental-port-3 PORT   Rental port 3 (default: 3033)
   --rental-port-N PORT   Additional rental ports (optional, e.g., --rental-port-4, --rental-port-5)
-  --external-port PORT   External port for rental containers (optional)
-  --internal-port PORT   Internal port for rental containers (optional, requires --external-port)
   --db-password PASS     PostgreSQL password (default: db_pass)
   --cpu-only             Install in CPU-only mode (default: auto-detect GPU)
   --marketplace          Enable marketplace mode (for VM rentals, auto-setup VM requirements)
@@ -104,60 +102,34 @@ Options:
   --help                 Show this help message
 
 Examples:
-  # Basic installation with required ports (location auto-detected)
+  # Basic installation with default ports (location auto-detected)
   curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
     --api-key abc123 \
-    --ssh-port 2222 \
-    --host-ssh-port 3030 \
-    --rental-port-1 8888 \
-    --rental-port-2 9999 \
-    --rental-port-3 7777
+    --host-ssh-port 3030
 
   # With additional rental ports
   curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
     --api-key abc123 \
-    --ssh-port 2222 \
-    --rental-port-1 8888 \
-    --rental-port-2 9999 \
-    --rental-port-3 7777 \
-    --rental-port-4 6666 \
-    --rental-port-5 5555
+    --host-ssh-port 3030 \
+    --rental-port-4 3034 \
+    --rental-port-5 3035
 
   # Marketplace mode (for VM rentals)
   curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
     --api-key abc123 \
-    --ssh-port 2222 \
-    --rental-port-1 8888 \
-    --rental-port-2 9999 \
-    --rental-port-3 7777 \
+    --host-ssh-port 3030 \
     --marketplace
-
-  # With custom external/internal port mapping
-  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
-    --api-key abc123 \
-    --ssh-port 2222 \
-    --rental-port-1 8888 \
-    --rental-port-2 9999 \
-    --rental-port-3 7777 \
-    --external-port 3030 \
-    --internal-port 3030
 
   # CPU-only mode
   curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
     --api-key abc123 \
-    --ssh-port 2222 \
-    --rental-port-1 8888 \
-    --rental-port-2 9999 \
-    --rental-port-3 7777 \
+    --host-ssh-port 3030 \
     --cpu-only
 
   # With Docker labels (e.g., for Watchtower)
   curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
     --api-key abc123 \
-    --ssh-port 2222 \
-    --rental-port-1 8888 \
-    --rental-port-2 9999 \
-    --rental-port-3 7777 \
+    --host-ssh-port 3030 \
     --label "com.centurylinklabs.watchtower.enable=true"
 
 EOF
@@ -186,6 +158,11 @@ while [[ $# -gt 0 ]]; do
         --rental-port-*)
             # Handle dynamic rental ports (--rental-port-1, --rental-port-2, etc.)
             PORT_NUM=$(echo "$1" | sed 's/--rental-port-//')
+            if [ "$USER_PROVIDED_RENTAL_PORTS" = false ]; then
+                # First rental port provided - clear defaults
+                RENTAL_PORTS=()
+                USER_PROVIDED_RENTAL_PORTS=true
+            fi
             RENTAL_PORTS+=("$2")
             shift 2
             ;;
@@ -241,25 +218,27 @@ cat << "EOF"
 
 EOF
 
+# Set defaults if not provided
+if [ -z "$SSH_PORT" ]; then
+    SSH_PORT="3030"
+fi
+
+if [ ${#RENTAL_PORTS[@]} -lt 3 ]; then
+    # User didn't provide enough rental ports, use defaults
+    RENTAL_PORTS=("3031" "3032" "3033")
+fi
+
 # Validate required parameters
 if [ -z "$API_KEY" ]; then
     print_error "API key is required!"
     echo ""
     echo "Get your API key from: https://taolie-ai.vercel.app/my-gpu"
     echo ""
-    echo "Usage: curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY --ssh-port PORT --rental-port-1 PORT --rental-port-2 PORT --rental-port-3 PORT"
+    echo "Usage: curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- --api-key YOUR_API_KEY --host-ssh-port PORT"
     exit 1
 fi
 
 # Validate required ports
-if [ -z "$SSH_PORT" ]; then
-    print_error "SSH port is required!"
-    echo ""
-    echo "Please specify SSH port with --ssh-port option"
-    echo "Example: --ssh-port 2222"
-    exit 1
-fi
-
 if [ -z "$HOST_SSH_PORT" ]; then
     print_error "Host SSH port is required!"
     echo ""
@@ -268,29 +247,17 @@ if [ -z "$HOST_SSH_PORT" ]; then
     exit 1
 fi
 
-if [ ${#RENTAL_PORTS[@]} -lt 3 ]; then
-    print_error "At least 3 rental ports are required!"
-    echo ""
-    echo "Please specify at least 3 rental ports:"
-    echo "  --rental-port-1 PORT"
-    echo "  --rental-port-2 PORT"
-    echo "  --rental-port-3 PORT"
-    echo ""
-    echo "You can add more rental ports: --rental-port-4 PORT, --rental-port-5 PORT, etc."
-    exit 1
-fi
-
 # Auto-detect location from IP if not provided (will be done after IP detection)
 
-# Validate port consistency
+# Validate port consistency (if user overrides external/internal ports, ensure both are set)
 if [ -n "$EXTERNAL_PORT" ] && [ -z "$INTERNAL_PORT" ]; then
-    print_error "--external-port requires --internal-port to be specified"
-    exit 1
+    # If external is set but internal is not, use external for internal too
+    INTERNAL_PORT="$EXTERNAL_PORT"
 fi
 
 if [ -z "$EXTERNAL_PORT" ] && [ -n "$INTERNAL_PORT" ]; then
-    print_error "--internal-port requires --external-port to be specified"
-    exit 1
+    # If internal is set but external is not, use internal for external too
+    EXTERNAL_PORT="$INTERNAL_PORT"
 fi
 
 print_header "Step 1: System Prerequisites Check"
@@ -739,33 +706,56 @@ echo ""
 
 PORT_CHECK_FAILED=false
 CLOSED_PORTS=()
-
-# Check SSH port (required)
-if ! check_port_open "$SSH_PORT" "SSH Port" "required"; then
-    PORT_CHECK_FAILED=true
-    CLOSED_PORTS+=("SSH Port: $SSH_PORT")
-fi
-
-# Check host SSH port with SSH verification (required)
 MACHINE_USERNAME=$(whoami)
-if ! check_ssh_access "$PUBLIC_IP" "$HOST_SSH_PORT" "$MACHINE_USERNAME" "Host SSH Port"; then
-    PORT_CHECK_FAILED=true
-    CLOSED_PORTS+=("Host SSH Port: $HOST_SSH_PORT (SSH verification failed)")
-fi
 
-# Check all rental ports (required)
-for i in "${!RENTAL_PORTS[@]}"; do
-    if ! check_port_open "${RENTAL_PORTS[$i]}" "Rental Port $((i+1))" "required"; then
-        PORT_CHECK_FAILED=true
-        CLOSED_PORTS+=("Rental Port $((i+1)): ${RENTAL_PORTS[$i]}")
+# Check all ports in range 3030-3039 one at a time
+print_info "Checking all ports in range 3030-3039..."
+for port in {3030..3039}; do
+    # Determine port type and name
+    # Check host SSH port first (prioritize SSH verification)
+    if [ "$port" = "$HOST_SSH_PORT" ]; then
+        # Check host SSH port with SSH verification
+        if ! check_ssh_access "$PUBLIC_IP" "$port" "$MACHINE_USERNAME" "Host SSH Port"; then
+            PORT_CHECK_FAILED=true
+            CLOSED_PORTS+=("Host SSH Port: $port (SSH verification failed)")
+        fi
+    elif [ "$port" = "$SSH_PORT" ]; then
+        # Check SSH port
+        if ! check_port_open "$port" "SSH Port" "required"; then
+            PORT_CHECK_FAILED=true
+            CLOSED_PORTS+=("SSH Port: $port")
+        fi
+    elif [[ " ${RENTAL_PORTS[@]} " =~ " ${port} " ]]; then
+        # Check rental port
+        # Find which rental port number this is
+        rental_num=1
+        for i in "${!RENTAL_PORTS[@]}"; do
+            if [ "${RENTAL_PORTS[$i]}" = "$port" ]; then
+                rental_num=$((i+1))
+                break
+            fi
+        done
+        if ! check_port_open "$port" "Rental Port $rental_num" "required"; then
+            PORT_CHECK_FAILED=true
+            CLOSED_PORTS+=("Rental Port $rental_num: $port")
+        fi
+    elif [ -n "$EXTERNAL_PORT" ] && [ "$port" = "$EXTERNAL_PORT" ]; then
+        # Check external port (optional)
+        if ! check_port_open "$port" "External Port" "optional"; then
+            PORT_CHECK_FAILED=true
+            CLOSED_PORTS+=("External Port: $port")
+        fi
+    else
+        # Check any other port in the range (check but don't fail)
+        check_port_open "$port" "Port $port" "optional" || true
     fi
 done
 
-# Check external port if provided (optional, skip internal port as it's not strict)
-if [ -n "$EXTERNAL_PORT" ]; then
-    if ! check_port_open "$EXTERNAL_PORT" "External Port" "optional"; then
+# If host-ssh-port is outside the 3030-3039 range, check it separately
+if [ -n "$HOST_SSH_PORT" ] && ([ "$HOST_SSH_PORT" -lt 3030 ] || [ "$HOST_SSH_PORT" -gt 3039 ]); then
+    if ! check_ssh_access "$PUBLIC_IP" "$HOST_SSH_PORT" "$MACHINE_USERNAME" "Host SSH Port"; then
         PORT_CHECK_FAILED=true
-        CLOSED_PORTS+=("External Port: $EXTERNAL_PORT")
+        CLOSED_PORTS+=("Host SSH Port: $HOST_SSH_PORT (SSH verification failed)")
     fi
 fi
 
@@ -1009,6 +999,44 @@ fi
 
 print_success "Taolie Host Agent container started"
 
+print_header "Step 5.5: Setting up Watchtower"
+
+# Stop and remove existing watchtower container if it exists
+print_info "Checking for existing Watchtower container..."
+if docker ps -a --format '{{.Names}}' | grep -q "^taolie-watchtower$"; then
+    print_warning "Stopping and removing existing taolie-watchtower container..."
+    docker stop taolie-watchtower &> /dev/null || true
+    docker rm taolie-watchtower &> /dev/null || true
+    print_success "Old Watchtower container removed"
+fi
+
+# Pull Watchtower image
+print_info "Pulling Watchtower image..."
+if docker pull ghcr.io/banadda/taolie-watchtower:latest &> /dev/null; then
+    print_success "Watchtower image pulled successfully"
+else
+    print_warning "Failed to pull Watchtower image, but will try to run anyway"
+fi
+
+# Run Watchtower container
+print_info "Starting Watchtower container..."
+if docker run -d \
+    --name taolie-watchtower \
+    --restart unless-stopped \
+    --network taolie-network \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -e WATCHTOWER_CLEANUP=true \
+    -e WATCHTOWER_POLL_INTERVAL=180 \
+    -e WATCHTOWER_INCLUDE_STOPPED=false \
+    -e WATCHTOWER_REVIVE_STOPPED=false \
+    -e WATCHTOWER_LABEL_ENABLE=true \
+    ghcr.io/banadda/taolie-watchtower:latest &> /dev/null; then
+    print_success "Watchtower container started"
+else
+    print_warning "Failed to start Watchtower container"
+    print_info "Watchtower is optional - the agent will still work without it"
+fi
+
 print_header "Step 6: Verification"
 
 # Wait for container to start
@@ -1025,6 +1053,14 @@ else
     echo "Checking logs:"
     docker logs taolie-host-agent
     exit 1
+fi
+
+# Check Watchtower container status
+print_info "Checking Watchtower container status..."
+if docker ps | grep -q taolie-watchtower; then
+    print_success "Watchtower container is running"
+else
+    print_warning "Watchtower container is not running (optional component)"
 fi
 
 # Check logs
@@ -1073,10 +1109,16 @@ ${BLUE}Next Steps:${NC}
 
 ${BLUE}Useful Commands:${NC}
   View logs:        docker logs -f taolie-host-agent
+  View Watchtower:  docker logs -f taolie-watchtower
   Check status:     docker ps
   Restart agent:    docker restart taolie-host-agent
   Stop agent:       docker stop taolie-host-agent
   Remove agent:     docker stop taolie-host-agent && docker rm taolie-host-agent
+
+${BLUE}Automatic Updates:${NC}
+  • Watchtower is installed and will automatically update containers with the watchtower label
+  • Poll interval: 3 minutes (180 seconds)
+  • The host agent container has the watchtower label enabled
 
 ${YELLOW}⚠ Important Reminders:${NC}
   • Ensure ports $SSH_PORT, $HOST_SSH_PORT$(for port in "${RENTAL_PORTS[@]}"; do echo ", $port"; done)$([ -n "$EXTERNAL_PORT" ] && echo ", $EXTERNAL_PORT" || echo "") are forwarded in your router
