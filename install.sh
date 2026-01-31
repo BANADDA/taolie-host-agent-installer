@@ -493,7 +493,7 @@ if [ -n "$EXTERNAL_PORT" ]; then
     echo "  External Port:  $EXTERNAL_PORT -> Internal Port: $INTERNAL_PORT"
 fi
 
-# Port checking function
+# Port checking function (IPv4 only - required by portchecker.io API)
 check_port_open() {
     local port=$1
     local port_name=$2
@@ -515,9 +515,9 @@ check_port_open() {
         return 1
     fi
     
-    # Start netcat listener in background
+    # Start netcat listener in background (IPv4 only: bind to 0.0.0.0)
     # This will listen on the port and send "hello port is open" when a connection is made
-    echo "hello port is open" | nc -l -p $port >/dev/null 2>&1 &
+    echo "hello port is open" | nc -4 -l -p $port >/dev/null 2>&1 &
     nc_pid=$!
     
     # Wait a moment for netcat to start listening
@@ -529,8 +529,8 @@ check_port_open() {
         nc_pid=""
     fi
     
-    # Use "me" as host to auto-detect requester IP
-    local response=$(curl -s --max-time 10 "https://portchecker.io/api/me/$port" 2>/dev/null)
+    # Use "me" as host to auto-detect requester IP (force IPv4 - API does not support IPv6)
+    local response=$(curl -4 -s --max-time 10 "https://portchecker.io/api/me/$port" 2>/dev/null)
     
     # Clean up netcat process if we started it
     if [ -n "$nc_pid" ] && kill -0 $nc_pid 2>/dev/null; then
