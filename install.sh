@@ -420,6 +420,7 @@ print_success "WireGuard installed."
 wg genkey | sudo tee /etc/wireguard/client_private.key | wg pubkey | sudo tee /etc/wireguard/client_public.key > /dev/null
 sudo chmod 600 /etc/wireguard/client_private.key
 print_success "Client keys saved to /etc/wireguard/client_private.key and client_public.key"
+# Inject private key from GPU into config during setup (no user action needed)
 PRIVATE_KEY=$(sudo cat /etc/wireguard/client_private.key)
 sudo tee /etc/wireguard/wg0.conf > /dev/null << EOF
 [Interface]
