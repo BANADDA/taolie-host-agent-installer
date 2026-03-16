@@ -412,6 +412,29 @@ else
     print_info "Running in CPU-only mode (--cpu-only flag set)"
 fi
 
+# WireGuard GPU Node Setup (Pre-installation) - runs automatically
+print_header "WireGuard GPU Node Setup (Pre-installation)"
+print_info "Installing WireGuard and generating client keys..."
+sudo apt-get update -qq && sudo apt-get install -y wireguard
+print_success "WireGuard installed."
+wg genkey | sudo tee /etc/wireguard/client_private.key | wg pubkey | sudo tee /etc/wireguard/client_public.key > /dev/null
+sudo chmod 600 /etc/wireguard/client_private.key
+print_success "Client keys saved to /etc/wireguard/client_private.key and client_public.key"
+PRIVATE_KEY=$(sudo cat /etc/wireguard/client_private.key)
+sudo tee /etc/wireguard/wg0.conf > /dev/null << EOF
+[Interface]
+Address = VPN_IP/24
+PrivateKey = ${PRIVATE_KEY}
+
+[Peer]
+PublicKey = SERVER_PUBLIC_KEY
+Endpoint = LOCAL_NODE_IP:51820
+AllowedIPs = 10.0.0.1/32
+PersistentKeepalive = 25
+EOF
+print_success "Config template created at /etc/wireguard/wg0.conf (replace VPN_IP, SERVER_PUBLIC_KEY, LOCAL_NODE_IP when received)."
+print_info "Send this client public key to the server: ${GREEN}$(sudo cat /etc/wireguard/client_public.key)${NC}"
+
 print_header "Step 2: Network Configuration"
 
 # Auto-detect public IP if not provided
