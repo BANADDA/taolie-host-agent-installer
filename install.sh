@@ -103,33 +103,33 @@ Options:
 
 Examples:
   # Basic installation with default ports (location auto-detected)
-  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
-    --api-key abc123 \
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \\
+    --api-key abc123 \\
     --host-ssh-port 3030
 
   # With additional rental ports
-  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
-    --api-key abc123 \
-    --host-ssh-port 3030 \
-    --rental-port-4 3034 \
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \\
+    --api-key abc123 \\
+    --host-ssh-port 3030 \\
+    --rental-port-4 3034 \\
     --rental-port-5 3035
 
   # Marketplace mode (for VM rentals)
-  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
-    --api-key abc123 \
-    --host-ssh-port 3030 \
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \\
+    --api-key abc123 \\
+    --host-ssh-port 3030 \\
     --marketplace
 
   # CPU-only mode
-  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
-    --api-key abc123 \
-    --host-ssh-port 3030 \
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \\
+    --api-key abc123 \\
+    --host-ssh-port 3030 \\
     --cpu-only
 
   # With Docker labels (e.g., for Watchtower)
-  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \
-    --api-key abc123 \
-    --host-ssh-port 3030 \
+  curl -fsSL https://raw.githubusercontent.com/BANADDA/taolie-host-agent-installer/main/install.sh | bash -s -- \\
+    --api-key abc123 \\
+    --host-ssh-port 3030 \\
     --label "com.centurylinklabs.watchtower.enable=true"
 
 EOF
@@ -247,16 +247,12 @@ if [ -z "$HOST_SSH_PORT" ]; then
     exit 1
 fi
 
-# Auto-detect location from IP if not provided (will be done after IP detection)
-
 # Validate port consistency (if user overrides external/internal ports, ensure both are set)
 if [ -n "$EXTERNAL_PORT" ] && [ -z "$INTERNAL_PORT" ]; then
-    # If external is set but internal is not, use external for internal too
     INTERNAL_PORT="$EXTERNAL_PORT"
 fi
 
 if [ -z "$EXTERNAL_PORT" ] && [ -n "$INTERNAL_PORT" ]; then
-    # If internal is set but external is not, use internal for external too
     EXTERNAL_PORT="$INTERNAL_PORT"
 fi
 
@@ -318,7 +314,6 @@ if [ "$CPU_ONLY" = false ]; then
             
             # Pre-pull the test image to avoid timeout issues
             print_info "Pulling test image (this may take a moment on first run)..."
-            # Try multiple CUDA versions for better compatibility
             if docker pull nvidia/cuda:12.2.0-base-ubuntu22.04 &> /dev/null; then
                 TEST_IMAGE="nvidia/cuda:12.2.0-base-ubuntu22.04"
             elif docker pull nvidia/cuda:12.0.0-base-ubuntu22.04 &> /dev/null; then
@@ -336,26 +331,19 @@ if [ "$CPU_ONLY" = false ]; then
             if timeout 30 docker run --rm --gpus all $TEST_IMAGE nvidia-smi > /dev/null 2>&1; then
                 print_success "NVIDIA Container Toolkit is properly configured (--gpus all)"
                 USE_GPUS_FLAG=true
-            # Then try --runtime=nvidia as fallback
             elif timeout 30 docker run --rm --runtime=nvidia $TEST_IMAGE nvidia-smi > /dev/null 2>&1; then
                 print_success "NVIDIA Container Toolkit is properly configured (--runtime=nvidia)"
                 USE_GPUS_FLAG=false
             else
                 print_warning "NVIDIA Container Toolkit test failed, attempting to fix..."
                 
-                # Check if toolkit is installed
                 if command -v nvidia-ctk &> /dev/null || dpkg -l | grep -q nvidia-container-toolkit; then
                     print_info "NVIDIA Container Toolkit is installed, configuring Docker..."
-                    
-                    # Configure Docker to use NVIDIA runtime
                     sudo nvidia-ctk runtime configure --runtime=docker &> /dev/null || true
-                    
-                    # Restart Docker daemon
                     print_info "Restarting Docker daemon..."
                     sudo systemctl restart docker
                     sleep 3
                     
-                    # Test again
                     print_info "Testing NVIDIA Container Toolkit again..."
                     if timeout 30 docker run --rm --gpus all $TEST_IMAGE nvidia-smi > /dev/null 2>&1; then
                         print_success "NVIDIA Container Toolkit is now working! (--gpus all)"
@@ -420,7 +408,6 @@ print_success "WireGuard installed."
 wg genkey | sudo tee /etc/wireguard/client_private.key | wg pubkey | sudo tee /etc/wireguard/client_public.key > /dev/null
 sudo chmod 600 /etc/wireguard/client_private.key
 print_success "Client keys saved to /etc/wireguard/client_private.key and client_public.key"
-# Inject private key from GPU into config during setup (no user action needed)
 PRIVATE_KEY=$(sudo cat /etc/wireguard/client_private.key)
 sudo tee /etc/wireguard/wg0.conf > /dev/null << EOF
 [Interface]
@@ -455,13 +442,11 @@ fi
 # Auto-detect location from IP if not provided
 if [ -z "$LOCATION" ]; then
     print_info "Auto-detecting location from IP address..."
-    # Try multiple geolocation APIs
     LOCATION=$(curl -s "https://ipapi.co/${PUBLIC_IP}/country_code/" 2>/dev/null)
     if [ -z "$LOCATION" ] || [ "$LOCATION" = "null" ]; then
         LOCATION=$(curl -s "http://ip-api.com/json/${PUBLIC_IP}" | grep -o '"countryCode":"[^"]*"' | cut -d'"' -f4 2>/dev/null)
     fi
     if [ -z "$LOCATION" ] || [ "$LOCATION" = "null" ]; then
-        # Fallback: try to get country name and map to common codes
         COUNTRY=$(curl -s "http://ip-api.com/json/${PUBLIC_IP}" | grep -o '"country":"[^"]*"' | cut -d'"' -f4 2>/dev/null)
         case "$COUNTRY" in
             *"United States"*) LOCATION="US" ;;
@@ -524,48 +509,36 @@ check_port_open() {
     local port_type=$3  # "required" or "optional"
     local nc_pid=""
     
-    # Display port check with nice formatting
     printf "  ${BLUE}→${NC} Checking ${CYAN}%s${NC} (port ${YELLOW}%s${NC})" "$port_name" "$port"
     if [ "$port_type" = "optional" ]; then
         printf " ${GRAY}[Optional]${NC}"
     fi
     printf " ... "
     
-    # Netcat should already be installed at this point (checked before port checks)
-    # But verify it's available just in case
     if ! command -v nc &> /dev/null; then
         echo -e "${RED}✗ FAILED${NC}"
         print_error "    netcat (nc) not found - port check cannot proceed"
         return 1
     fi
     
-    # Start netcat listener in background (IPv4 only: bind to 0.0.0.0)
-    # This will listen on the port and send "hello port is open" when a connection is made
     echo "hello port is open" | nc -4 -l -p $port >/dev/null 2>&1 &
     nc_pid=$!
     
-    # Wait a moment for netcat to start listening
     sleep 2
     
-    # Verify netcat is still running (if it died immediately, port might be in use)
     if ! kill -0 $nc_pid 2>/dev/null; then
-        # Netcat died - port might be in use, but continue with portchecker anyway
         nc_pid=""
     fi
     
-    # Use "me" as host to auto-detect requester IP (force IPv4 - API does not support IPv6)
     local response=$(curl -4 -s --max-time 10 "https://portchecker.io/api/me/$port" 2>/dev/null)
     
-    # Clean up netcat process if we started it
     if [ -n "$nc_pid" ] && kill -0 $nc_pid 2>/dev/null; then
         kill $nc_pid 2>/dev/null || true
         wait $nc_pid 2>/dev/null || true
     fi
     
-    # Also try to kill any remaining netcat processes on this port (safety cleanup)
     pkill -f "nc -l -p $port" 2>/dev/null || true
     
-    # Evaluate response
     if [ "$response" = "True" ]; then
         echo -e "${GREEN}✓ OPEN${NC}"
         return 0
@@ -576,7 +549,7 @@ check_port_open() {
         echo -e "${YELLOW}⚠ UNKNOWN${NC}"
         print_warning "    Could not verify port status (API response: ${response:-timeout})"
         print_warning "    Proceeding anyway, but please ensure the port is open"
-        return 0  # Don't block on API errors, just warn
+        return 0
     fi
 }
 
@@ -584,28 +557,24 @@ check_port_open() {
 check_ssh_access() {
     local ip=$1
     local port=$2
-    local username=$3  # Not used, kept for compatibility
+    local username=$3
     local port_name=$4
     
-    # Display SSH check with nice formatting
     printf "  ${BLUE}→${NC} Checking ${CYAN}%s${NC} (SSH on port ${YELLOW}%s${NC})" "$port_name" "$port"
     printf " ... "
     
-    # Check if netcat is available (should already be installed for port checking)
     if ! command -v nc &> /dev/null; then
         echo -e "${RED}✗ FAILED${NC}"
         print_error "    netcat (nc) not found - SSH check cannot proceed"
         return 1
     fi
     
-    # Check if Python 3 is available
     if ! command -v python3 &> /dev/null; then
         echo -e "${RED}✗ FAILED${NC}"
         print_error "    Python 3 not found - SSH check cannot proceed"
         return 1
     fi
     
-    # Create temporary Python script for SSH verification using netcat
     local ssh_check_script=$(mktemp)
     cat > "$ssh_check_script" << 'PYTHON_EOF'
 import subprocess
@@ -639,14 +608,11 @@ if __name__ == "__main__":
     sys.exit(result)
 PYTHON_EOF
     
-    # Run the SSH check script
     local result=$(python3 "$ssh_check_script" "$ip" "$port" 2>&1)
     local exit_code=$?
     
-    # Clean up temporary script
     rm -f "$ssh_check_script"
     
-    # Evaluate result
     if [ $exit_code -eq 0 ]; then
         echo -e "${GREEN}✓ SSH PORT OPEN${NC}"
         return 0
@@ -673,12 +639,10 @@ if ! command -v nc &> /dev/null; then
         sudo apt-get update -qq >/dev/null 2>&1
         sudo apt-get install -y netcat-openbsd >/dev/null 2>&1
     else
-        # Try without sudo (in case we're already root)
         apt-get update -qq >/dev/null 2>&1
         apt-get install -y netcat-openbsd >/dev/null 2>&1
     fi
     
-    # Verify installation
     if ! command -v nc &> /dev/null; then
         print_error "Failed to install netcat. Port checking cannot proceed."
         exit 1
@@ -695,23 +659,17 @@ MACHINE_USERNAME=$(whoami)
 # Check all ports in range 3030-3039 one at a time
 print_info "Checking all ports in range 3030-3039..."
 for port in {3030..3039}; do
-    # Determine port type and name
-    # Check host SSH port first (prioritize SSH verification)
     if [ "$port" = "$HOST_SSH_PORT" ]; then
-        # Check host SSH port with SSH verification
         if ! check_ssh_access "$PUBLIC_IP" "$port" "$MACHINE_USERNAME" "Host SSH Port"; then
             PORT_CHECK_FAILED=true
             CLOSED_PORTS+=("Host SSH Port: $port (SSH verification failed)")
         fi
     elif [ "$port" = "$SSH_PORT" ]; then
-        # Check SSH port
         if ! check_port_open "$port" "SSH Port" "required"; then
             PORT_CHECK_FAILED=true
             CLOSED_PORTS+=("SSH Port: $port")
         fi
     elif [[ " ${RENTAL_PORTS[@]} " =~ " ${port} " ]]; then
-        # Check rental port
-        # Find which rental port number this is
         rental_num=1
         for i in "${!RENTAL_PORTS[@]}"; do
             if [ "${RENTAL_PORTS[$i]}" = "$port" ]; then
@@ -724,13 +682,11 @@ for port in {3030..3039}; do
             CLOSED_PORTS+=("Rental Port $rental_num: $port")
         fi
     elif [ -n "$EXTERNAL_PORT" ] && [ "$port" = "$EXTERNAL_PORT" ]; then
-        # Check external port (optional)
         if ! check_port_open "$port" "External Port" "optional"; then
             PORT_CHECK_FAILED=true
             CLOSED_PORTS+=("External Port: $port")
         fi
     else
-        # Check any other port in the range (required - all ports must be open)
         if ! check_port_open "$port" "Port $port" "required"; then
             PORT_CHECK_FAILED=true
             CLOSED_PORTS+=("Port $port")
@@ -858,7 +814,7 @@ monitoring:
   duration_check_interval: 30
 
 database:
-  host: "taolie-postgres"
+  host: "localhost"
   port: 5432
   name: "taolie_host_agent"
   user: "agent"
@@ -876,14 +832,9 @@ print_success "Configuration file created: $INSTALL_DIR/config.yaml"
 
 print_header "Step 4: Docker Setup"
 
-# Create Docker network
-print_info "Creating Docker network..."
-if docker network inspect taolie-network &> /dev/null; then
-    print_warning "Docker network 'taolie-network' already exists"
-else
-    docker network create taolie-network
-    print_success "Docker network created"
-fi
+# Using host networking - compatible with k3s/Kubernetes
+# No Docker bridge network needed - all containers share host network stack
+print_info "Using host networking mode (k3s/Kubernetes compatible)"
 
 # Stop and remove existing containers if they exist
 print_info "Checking for existing containers..."
@@ -907,20 +858,20 @@ if docker ps -a --format '{{.Names}}' | grep -q "^taolie-postgres$"; then
     fi
 fi
 
-# Run PostgreSQL
+# Run PostgreSQL with host networking
 print_info "Starting PostgreSQL database..."
 if ! docker ps --format '{{.Names}}' | grep -q "^taolie-postgres$"; then
     docker run -d \
         --name taolie-postgres \
         --restart unless-stopped \
-        --network taolie-network \
+        --network host \
         -e POSTGRES_DB=taolie_host_agent \
         -e POSTGRES_USER=agent \
         -e POSTGRES_PASSWORD="$DB_PASSWORD" \
         -v taolie_postgres_data:/var/lib/postgresql/data \
         postgres:16
     
-    print_success "PostgreSQL container started"
+    print_success "PostgreSQL container started (host network)"
     sleep 5  # Wait for PostgreSQL to initialize
 else
     print_info "PostgreSQL container already running"
@@ -952,10 +903,10 @@ build_docker_cmd() {
         )
     fi
     
-    # Add common flags
+    # Add common flags — host networking for k3s compatibility
     cmd_args+=(
         "--privileged"
-        "--network" "taolie-network"
+        "--network" "host"
     )
     
     # Add labels
@@ -984,7 +935,7 @@ else
     build_docker_cmd "gpu"
 fi
 
-print_success "Taolie Host Agent container started"
+print_success "Taolie Host Agent container started (host network)"
 
 print_header "Step 5.5: Setting up Watchtower"
 
@@ -1005,12 +956,12 @@ else
     print_warning "Failed to pull Watchtower image, but will try to run anyway"
 fi
 
-# Run Watchtower container
+# Run Watchtower container with host networking
 print_info "Starting Watchtower container..."
 if docker run -d \
     --name taolie-watchtower \
     --restart unless-stopped \
-    --network taolie-network \
+    --network host \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -e WATCHTOWER_CLEANUP=true \
     -e WATCHTOWER_POLL_INTERVAL=180 \
@@ -1018,7 +969,7 @@ if docker run -d \
     -e WATCHTOWER_REVIVE_STOPPED=false \
     -e WATCHTOWER_LABEL_ENABLE=true \
     ghcr.io/banadda/taolie-watchtower:latest &> /dev/null; then
-    print_success "Watchtower container started"
+    print_success "Watchtower container started (host network)"
 else
     print_warning "Failed to start Watchtower container"
     print_info "Watchtower is optional - the agent will still work without it"
@@ -1060,7 +1011,6 @@ if [ "$CPU_ONLY" = false ]; then
     sleep 5  # Give container time to fully start
     if docker exec taolie-host-agent nvidia-smi &> /dev/null; then
         print_success "GPU is accessible from container"
-        # Show GPU info
         echo ""
         docker exec taolie-host-agent nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader | head -1
     else
@@ -1081,6 +1031,7 @@ ${BLUE}Configuration Summary:${NC}
   Machine Username:      $MACHINE_USERNAME
   Public IP:             $PUBLIC_IP
   Location:              $LOCATION (auto-detected)
+  Network Mode:          Host networking (k3s compatible)
   SSH Port:              $SSH_PORT
   Host SSH Port:         $HOST_SSH_PORT
   Rental Ports:          $(IFS=', '; echo "${RENTAL_PORTS[*]}")$([ -n "$EXTERNAL_PORT" ] && echo "
@@ -1111,6 +1062,7 @@ ${YELLOW}⚠ Important Reminders:${NC}
   • Ensure ports $SSH_PORT, $HOST_SSH_PORT$(for port in "${RENTAL_PORTS[@]}"; do echo ", $port"; done)$([ -n "$EXTERNAL_PORT" ] && echo ", $EXTERNAL_PORT" || echo "") are forwarded in your router
   • If using cloud provider, update security groups to allow these ports
   • Keep your API key secure and never share it
+  • PostgreSQL is listening on localhost:5432 (host network)
 
 ${BLUE}Need Help?${NC}
   Documentation: https://taolie-ai.vercel.app/my-gpu
